@@ -1,0 +1,768 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Fluid Navigator Ride-Hailing API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication
+  - name: users
+    description: User management
+  - name: rides
+    description: Ride management
+  - name: bids
+    description: Driver bidding
+  - name: reviews
+    description: Trip reviews
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /auth/send-otp:
+    post:
+      operationId: sendOtp
+      tags: [auth]
+      summary: Send OTP to phone number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendOtpRequest"
+      responses:
+        "200":
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendOtpResponse"
+
+  /auth/verify-otp:
+    post:
+      operationId: verifyOtp
+      tags: [auth]
+      summary: Verify OTP and return token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyOtpRequest"
+      responses:
+        "200":
+          description: OTP verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Invalid OTP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/register:
+    post:
+      operationId: registerUser
+      tags: [auth]
+      summary: Complete registration with name and role
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          description: Registration complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout and invalidate token
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      operationId: updateMe
+      tags: [users]
+      summary: Update current user profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+
+  /users/me/online:
+    put:
+      operationId: setOnlineStatus
+      tags: [users]
+      summary: Set driver online/offline status
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OnlineStatusRequest"
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+
+  /rides:
+    post:
+      operationId: createRide
+      tags: [rides]
+      summary: Create a new ride request (rider)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRideRequest"
+      responses:
+        "201":
+          description: Ride created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RideResponse"
+
+    get:
+      operationId: listRides
+      tags: [rides]
+      summary: List rides (searching for drivers, or my rides for rider)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rides list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RideListResponse"
+
+  /rides/history:
+    get:
+      operationId: getRideHistory
+      tags: [rides]
+      summary: Get completed ride history for current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Trip history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripHistoryListResponse"
+
+  /rides/active:
+    get:
+      operationId: getActiveRide
+      tags: [rides]
+      summary: Get the current user's active ride
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Active ride or null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveRideResponse"
+
+  /rides/{rideId}:
+    get:
+      operationId: getRide
+      tags: [rides]
+      summary: Get a specific ride
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ride detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RideResponse"
+
+  /rides/{rideId}/cancel:
+    put:
+      operationId: cancelRide
+      tags: [rides]
+      summary: Cancel a ride
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ride cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RideResponse"
+
+  /rides/{rideId}/complete:
+    put:
+      operationId: completeRide
+      tags: [rides]
+      summary: Complete a ride
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ride completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RideResponse"
+
+  /rides/{rideId}/bids:
+    post:
+      operationId: createBid
+      tags: [bids]
+      summary: Driver submits a bid for a ride
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBidRequest"
+      responses:
+        "201":
+          description: Bid created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BidResponse"
+
+    get:
+      operationId: listBids
+      tags: [bids]
+      summary: Get bids for a ride
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bids list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BidListResponse"
+
+  /rides/{rideId}/bids/{bidId}/accept:
+    put:
+      operationId: acceptBid
+      tags: [bids]
+      summary: Rider accepts a bid
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bidId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bid accepted, ride started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RideResponse"
+
+  /rides/{rideId}/review:
+    post:
+      operationId: createReview
+      tags: [reviews]
+      summary: Submit a review after a completed trip
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReviewRequest"
+      responses:
+        "201":
+          description: Review submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    SendOtpRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+      required:
+        - phone
+
+    SendOtpResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        devCode:
+          type: string
+      required:
+        - message
+
+    VerifyOtpRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        code:
+          type: string
+      required:
+        - phone
+        - code
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserData"
+        isNewUser:
+          type: boolean
+      required:
+        - token
+        - user
+        - isNewUser
+
+    RegisterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [rider, driver]
+      required:
+        - name
+        - role
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+
+    OnlineStatusRequest:
+      type: object
+      properties:
+        isOnline:
+          type: boolean
+      required:
+        - isOnline
+
+    UserData:
+      type: object
+      properties:
+        id:
+          type: string
+        phone:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [rider, driver]
+        rating:
+          type: number
+        totalRides:
+          type: integer
+        isOnline:
+          type: boolean
+      required:
+        - id
+        - phone
+        - name
+        - role
+        - rating
+        - totalRides
+        - isOnline
+
+    UserResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/UserData"
+      required:
+        - user
+
+    CreateRideRequest:
+      type: object
+      properties:
+        pickup:
+          type: string
+        dropoff:
+          type: string
+        offeredFare:
+          type: number
+        distance:
+          type: string
+        duration:
+          type: string
+      required:
+        - pickup
+        - dropoff
+        - offeredFare
+
+    RideData:
+      type: object
+      properties:
+        id:
+          type: string
+        riderId:
+          type: string
+        driverId:
+          type: string
+          nullable: true
+        pickup:
+          type: string
+        dropoff:
+          type: string
+        offeredFare:
+          type: number
+        finalFare:
+          type: number
+          nullable: true
+        distance:
+          type: string
+        duration:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        riderName:
+          type: string
+        riderRating:
+          type: number
+        driverName:
+          type: string
+          nullable: true
+        driverRating:
+          type: number
+          nullable: true
+        carModel:
+          type: string
+          nullable: true
+      required:
+        - id
+        - riderId
+        - pickup
+        - dropoff
+        - offeredFare
+        - distance
+        - duration
+        - status
+        - createdAt
+        - riderName
+        - riderRating
+
+    RideResponse:
+      type: object
+      properties:
+        ride:
+          $ref: "#/components/schemas/RideData"
+      required:
+        - ride
+
+    RideListResponse:
+      type: object
+      properties:
+        rides:
+          type: array
+          items:
+            $ref: "#/components/schemas/RideData"
+      required:
+        - rides
+
+    TripHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+        pickup:
+          type: string
+        dropoff:
+          type: string
+        fare:
+          type: number
+        distance:
+          type: string
+        duration:
+          type: string
+        driverName:
+          type: string
+        riderName:
+          type: string
+        rating:
+          type: integer
+        status:
+          type: string
+      required:
+        - id
+        - date
+        - pickup
+        - dropoff
+        - fare
+        - distance
+        - duration
+        - status
+
+    TripHistoryListResponse:
+      type: object
+      properties:
+        trips:
+          type: array
+          items:
+            $ref: "#/components/schemas/TripHistoryItem"
+      required:
+        - trips
+
+    ActiveRideResponse:
+      type: object
+      properties:
+        ride:
+          $ref: "#/components/schemas/RideData"
+          nullable: true
+      required:
+        - ride
+
+    BidData:
+      type: object
+      properties:
+        id:
+          type: string
+        rideId:
+          type: string
+        driverId:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+        eta:
+          type: string
+        driverName:
+          type: string
+        driverRating:
+          type: number
+        carModel:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - rideId
+        - driverId
+        - amount
+        - status
+        - eta
+        - driverName
+        - driverRating
+        - carModel
+        - createdAt
+
+    BidResponse:
+      type: object
+      properties:
+        bid:
+          $ref: "#/components/schemas/BidData"
+      required:
+        - bid
+
+    BidListResponse:
+      type: object
+      properties:
+        bids:
+          type: array
+          items:
+            $ref: "#/components/schemas/BidData"
+      required:
+        - bids
+
+    CreateBidRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+        eta:
+          type: string
+      required:
+        - amount
+
+    CreateReviewRequest:
+      type: object
+      properties:
+        revieweeId:
+          type: string
+        rating:
+          type: integer
+        comment:
+          type: string
+      required:
+        - revieweeId
+        - rating

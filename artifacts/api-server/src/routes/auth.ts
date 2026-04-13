@@ -1,0 +1,182 @@
+import { Router } from "express";
+import { db, otpsTable, usersTable, sessionsTable } from "@workspace/db";
+import { eq, and, gt } from "drizzle-orm";
+import { generateId, generateToken } from "../lib/auth.js";
+import { requireAuth } from "../middlewares/requireAuth.js";
+
+const router = Router();
+
+async function sendSmsOtp(phone: string, code: string): Promise<void> {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+
+  if (!accountSid || !authToken || !fromNumber) {
+    console.log(`[DEV] OTP for +${phone}: ${code}`);
+    return;
+  }
+
+  const body = `آپ کا Fluid Navigator تصدیقی کوڈ ہے: ${code}\nیہ کوڈ 10 منٹ میں ختم ہو جائے گا۔`;
+
+  const response = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64"),
+      },
+      body: new URLSearchParams({
+        From: fromNumber,
+        To: `+${phone}`,
+        Body: body,
+      }).toString(),
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    console.error("Twilio error:", err);
+    throw new Error("SMS delivery failed");
+  }
+}
+
+router.post("/send-otp", async (req, res) => {
+  const { phone } = req.body as { phone: string };
+  if (!phone) {
+    res.status(400).json({ error: "Phone is required" });
+    return;
+  }
+  const normalizedPhone = phone.replace(/\s+/g, "").replace(/^\+/, "");
+  const code = Math.floor(1000 + Math.random() * 9000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await db.insert(otpsTable).values({
+    id: generateId(),
+    phone: normalizedPhone,
+    code,
+    expiresAt,
+  });
+
+  try {
+    await sendSmsOtp(normalizedPhone, code);
+  } catch (e) {
+    console.error("SMS send failed:", e);
+  }
+
+  const isTwilioConfigured = !!(
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    process.env.TWILIO_PHONE_NUMBER
+  );
+
+  res.json({
+    message: "OTP sent successfully",
+    ...(isTwilioConfigured ? {} : { devCode: code }),
+  });
+});
+
+router.post("/verify-otp", async (req, res) => {
+  const { phone, code } = req.body as { phone: string; code: string };
+  if (!phone || !code) {
+    res.status(400).json({ error: "Phone and code are required" });
+    return;
+  }
+  const normalizedPhone = phone.replace(/\s+/g, "").replace(/^\+/, "");
+  const now = new Date();
+  const otps = await db
+    .select()
+    .from(otpsTable)
+    .where(
+      and(
+        eq(otpsTable.phone, normalizedPhone),
+        eq(otpsTable.code, code),
+        eq(otpsTable.used, false),
+        gt(otpsTable.expiresAt, now)
+      )
+    )
+    .limit(1);
+
+  if (!otps.length) {
+    res.status(400).json({ error: "Invalid or expired OTP" });
+    return;
+  }
+
+  await db.update(otpsTable).set({ used: true }).where(eq(otpsTable.id, otps[0]!.id));
+
+  const existingUsers = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.phone, normalizedPhone))
+    .limit(1);
+
+  let user = existingUsers[0];
+  const isNewUser = !user;
+
+  if (!user) {
+    const userId = generateId();
+    await db.insert(usersTable).values({
+      id: userId,
+      phone: normalizedPhone,
+      name: "",
+      role: "rider",
+    });
+    const created = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    user = created[0]!;
+  }
+
+  const token = generateToken();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  await db.insert(sessionsTable).values({
+    id: generateId(),
+    userId: user.id,
+    token,
+    expiresAt,
+  });
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      phone: user.phone,
+      name: user.name,
+      role: user.role,
+      rating: user.rating,
+      totalRides: user.totalRides,
+      isOnline: user.isOnline,
+    },
+    isNewUser,
+  });
+});
+
+router.post("/register", requireAuth, async (req, res) => {
+  const user = (req as any).user;
+  const { name, role } = req.body as { name: string; role: "rider" | "driver" };
+  if (!name || !role) {
+    res.status(400).json({ error: "Name and role are required" });
+    return;
+  }
+  const updated = await db
+    .update(usersTable)
+    .set({ name, role })
+    .where(eq(usersTable.id, user.id))
+    .returning();
+  const u = updated[0]!;
+  res.json({
+    user: {
+      id: u.id, phone: u.phone, name: u.name, role: u.role,
+      rating: u.rating, totalRides: u.totalRides, isOnline: u.isOnline,
+    }
+  });
+});
+
+router.post("/logout", requireAuth, async (req, res) => {
+  const authHeader = req.headers["authorization"];
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    await db.delete(sessionsTable).where(eq(sessionsTable.token, token));
+  }
+  res.json({ success: true });
+});
+
+export default router;
