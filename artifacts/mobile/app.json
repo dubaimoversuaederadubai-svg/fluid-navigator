@@ -18,6 +18,7 @@
     },
     "android": {
       "package": "com.fluidnavigator.app",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#10B981"
