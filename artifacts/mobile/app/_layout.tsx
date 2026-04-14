@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -20,10 +21,14 @@ import { LanguageProvider } from "@/context/LanguageContext";
 
 SplashScreen.preventAutoHideAsync();
 
-if (process.env.EXPO_PUBLIC_API_URL) {
-  setBaseUrl(process.env.EXPO_PUBLIC_API_URL);
+const isWeb = Platform.OS === "web";
+const webApiUrl = process.env.EXPO_PUBLIC_API_URL_WEB;
+const nativeApiUrl = process.env.EXPO_PUBLIC_API_URL;
+const apiUrl = isWeb ? (webApiUrl || nativeApiUrl) : (nativeApiUrl || webApiUrl);
+if (apiUrl) {
+  setBaseUrl(apiUrl);
 } else if (process.env.EXPO_PUBLIC_DOMAIN) {
-  setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
+  setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}:8080`);
 }
 setAuthTokenGetter(async () => {
   return AsyncStorage.getItem("fluid_token");
