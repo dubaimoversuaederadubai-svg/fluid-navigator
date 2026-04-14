@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StarRating } from "@/components/StarRating";
 import { useColors } from "@/hooks/useColors";
 import { useGetRide, useCreateReview } from "@workspace/api-client-react";
+import { useLang } from "@/context/LanguageContext";
 
 export default function TripSummaryScreen() {
   const insets = useSafeAreaInsets();
@@ -29,6 +30,7 @@ export default function TripSummaryScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
+  const { t } = useLang();
   const { data: rideData, isLoading } = useGetRide(params.rideId ?? "", {
     query: { enabled: !!params.rideId },
   });
@@ -72,20 +74,18 @@ export default function TripSummaryScreen() {
           <View style={[styles.checkCircle, { backgroundColor: colors.primary + "15" }]}>
             <Ionicons name="checkmark-circle" size={40} color={colors.primary} />
           </View>
-          <Text style={[styles.successTitle, { color: colors.foreground }]}>سفر مکمل! 🎉</Text>
-          <Text style={[styles.successSub, { color: colors.mutedForeground }]}>
-            Fluid Navigator استعمال کرنے کا شکریہ
-          </Text>
+          <Text style={[styles.successTitle, { color: colors.foreground }]}>{t("rideComplete")}</Text>
+          <Text style={[styles.successSub, { color: colors.mutedForeground }]}>{t("thankYou")}</Text>
         </View>
 
         <View style={[styles.fareCard, { backgroundColor: colors.card }]}>
           <View style={styles.fareRow}>
             <View style={[styles.walletBadge, { backgroundColor: colors.secondary + "20" }]}>
               <Ionicons name="wallet" size={14} color={colors.secondary} />
-              <Text style={[styles.walletText, { color: colors.secondary }]}>ادا کیا</Text>
+              <Text style={[styles.walletText, { color: colors.secondary }]}>{t("paid")}</Text>
             </View>
             <View>
-              <Text style={[styles.fareLabel, { color: colors.mutedForeground }]}>کل کرایہ</Text>
+              <Text style={[styles.fareLabel, { color: colors.mutedForeground }]}>{t("totalFare")}</Text>
               <Text style={[styles.fareAmount, { color: colors.foreground }]}>Rs {fare.toFixed(0)}</Text>
             </View>
           </View>
@@ -94,12 +94,12 @@ export default function TripSummaryScreen() {
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: colors.surfaceContainerLow }]}>
             <Ionicons name="git-network-outline" size={20} color={colors.primary} />
-            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>فاصلہ</Text>
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{t("distance")}</Text>
             <Text style={[styles.statValue, { color: colors.foreground }]}>{ride?.distance ?? "—"}</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: colors.surfaceContainerLow }]}>
             <Ionicons name="time-outline" size={20} color={colors.secondary} />
-            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>وقت</Text>
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{t("duration")}</Text>
             <Text style={[styles.statValue, { color: colors.foreground }]}>{ride?.duration ?? "—"}</Text>
           </View>
         </View>
@@ -108,7 +108,7 @@ export default function TripSummaryScreen() {
           <View style={styles.routeRow}>
             <View style={{ flex: 1, alignItems: "flex-end" }}>
               <Text style={[styles.routeText, { color: colors.foreground }]} numberOfLines={1}>
-                {ride?.pickup ?? "شروعاتی مقام"}
+                {ride?.pickup ?? t("startPoint")}
               </Text>
             </View>
             <View style={[styles.routeDot, { backgroundColor: colors.primary }]} />
@@ -117,7 +117,7 @@ export default function TripSummaryScreen() {
           <View style={styles.routeRow}>
             <View style={{ flex: 1, alignItems: "flex-end" }}>
               <Text style={[styles.routeText, { color: colors.foreground }]} numberOfLines={1}>
-                {ride?.dropoff ?? "آخری مقام"}
+                {ride?.dropoff ?? t("endPoint")}
               </Text>
             </View>
             <View style={[styles.routeDotOutline, { borderColor: colors.secondary }]} />
@@ -128,11 +128,11 @@ export default function TripSummaryScreen() {
           <View style={[styles.ratingCard, { backgroundColor: colors.card }]}>
             <View style={styles.driverRow}>
               <LinearGradient colors={["#10B981", "#2170E4"]} style={styles.driverAvatar}>
-                <Text style={styles.driverAvatarText}>{(ride.driverName ?? "ڈ").charAt(0)}</Text>
+                <Text style={styles.driverAvatarText}>{(ride.driverName ?? "D").charAt(0)}</Text>
               </LinearGradient>
               <View style={{ flex: 1, alignItems: "flex-end" }}>
                 <Text style={[styles.driverName, { color: colors.foreground }]}>
-                  {ride.driverName ?? "آپ کا ڈرائیور"}
+                  {ride.driverName ?? t("yourDriver")}
                 </Text>
                 <View style={styles.driverSub}>
                   <Text style={[styles.driverRating, { color: colors.mutedForeground }]}>
@@ -144,7 +144,7 @@ export default function TripSummaryScreen() {
             </View>
 
             <View style={[styles.ratingSection, { borderTopColor: colors.border }]}>
-              <Text style={[styles.rateLabel, { color: colors.mutedForeground }]}>سفر کی ریٹنگ دیں</Text>
+              <Text style={[styles.rateLabel, { color: colors.mutedForeground }]}>{t("rateDrv")}</Text>
               <StarRating
                 rating={rating}
                 onRate={(n) => {
@@ -157,7 +157,7 @@ export default function TripSummaryScreen() {
                   styles.commentInput,
                   { backgroundColor: colors.surfaceContainerLow, color: colors.foreground },
                 ]}
-                placeholder="تبصرہ لکھیں..."
+                placeholder={t("addComment")}
                 placeholderTextColor={colors.mutedForeground}
                 value={comment}
                 onChangeText={setComment}
@@ -180,7 +180,7 @@ export default function TripSummaryScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.finishText}>
-                {ride?.driverId ? "ریٹنگ جمع کریں" : "مکمل کریں"}
+                {ride?.driverId ? t("submitRating") : t("finish")}
               </Text>
             )}
           </LinearGradient>

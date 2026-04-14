@@ -10,6 +10,13 @@ export const usersTable = pgTable("users", {
   rating: real("rating").notNull().default(5.0),
   totalRides: integer("total_rides").notNull().default(0),
   isOnline: boolean("is_online").notNull().default(false),
+  cnicNumber: text("cnic_number"),
+  cnicVerified: boolean("cnic_verified").notNull().default(false),
+  licenseNumber: text("license_number"),
+  licenseVerified: boolean("license_verified").notNull().default(false),
+  vehicleModel: text("vehicle_model"),
+  vehicleNumber: text("vehicle_number"),
+  paymentMethod: text("payment_method").notNull().default("cash"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

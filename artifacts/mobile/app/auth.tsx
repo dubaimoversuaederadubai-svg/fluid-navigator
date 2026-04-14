@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSendOtp, useVerifyOtp, useRegisterUser } from "@workspace/api-client-react";
 import type { AppUser } from "@/context/AppContext";
 import { useApp } from "@/context/AppContext";
+import { useLang } from "@/context/LanguageContext";
 import { useColors } from "@/hooks/useColors";
 
 type Screen = "phone" | "otp" | "role";
@@ -28,6 +29,7 @@ export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const { setAuth, setOnboarded } = useApp();
+  const { lang, setLang, t } = useLang();
   const [screen, setScreen] = useState<Screen>("phone");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState<string[]>(["", "", "", ""]);
@@ -42,7 +44,7 @@ export default function AuthScreen() {
   const handlePhoneContinue = async () => {
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 9) {
-      Alert.alert("نمبر غلط ہے", "براہ کرم درست پاکستانی موبائل نمبر درج کریں۔");
+      Alert.alert(t("invalidPhone"), t("invalidPhoneMsg"));
       return;
     }
     try {
@@ -55,7 +57,7 @@ export default function AuthScreen() {
         setTimeout(() => setOtp(resp.devCode!.split("")), 300);
       }
     } catch {
-      Alert.alert("خرابی", "OTP بھیجنے میں ناکامی۔ دوبارہ کوشش کریں۔");
+      Alert.alert(t("error"), t("otpSendError"));
     }
   };
 
@@ -78,7 +80,7 @@ export default function AuthScreen() {
   const handleVerify = async (codeOverride?: string) => {
     const code = codeOverride ?? otp.join("");
     if (code.length < 4) {
-      Alert.alert("کوڈ درج کریں", "براہ کرم 4 ہندسوں کا کوڈ درج کریں۔");
+      Alert.alert(t("enterCode"), t("enterCodeMsg"));
       return;
     }
     try {
@@ -107,13 +109,13 @@ export default function AuthScreen() {
     } catch {
       setOtp(["", "", "", ""]);
       otpRefs.current[0]?.focus();
-      Alert.alert("کوڈ غلط ہے", "OTP غلط یا میعاد ختم ہو گئی۔ دوبارہ کوشش کریں۔");
+      Alert.alert(t("codeInvalid"), t("codeInvalidMsg"));
     }
   };
 
   const handleSelectRole = async (name: string, role: "rider" | "driver") => {
     if (!name.trim()) {
-      Alert.alert("نام درج کریں", "براہ کرم اپنا نام لکھیں۔");
+      Alert.alert(t("nameRequired"), t("nameRequiredMsg"));
       return;
     }
     try {
@@ -133,7 +135,7 @@ export default function AuthScreen() {
       await setOnboarded(true);
       router.replace("/(tabs)/home");
     } catch {
-      Alert.alert("خرابی", "رجسٹریشن مکمل نہیں ہو سکی۔");
+      Alert.alert(t("error"), t("registrationError"));
     }
   };
 
@@ -147,13 +149,29 @@ export default function AuthScreen() {
       style={styles.root}
     >
       <View style={[styles.brandPanel, { paddingTop: topPad + 36 }]}>
-        <View style={styles.logoRow}>
-          <Ionicons name="navigate" size={28} color="#fff" />
-          <Text style={styles.brandName}>Fluid Navigator</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <View style={styles.langToggleRow}>
+            <TouchableOpacity
+              style={[styles.langToggleBtn, lang === "ur" && styles.langToggleActive]}
+              onPress={() => setLang("ur")}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.langToggleText, { color: lang === "ur" ? "#10B981" : "rgba(255,255,255,0.6)" }]}>اردو</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.langToggleBtn, lang === "en" && styles.langToggleActive]}
+              onPress={() => setLang("en")}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.langToggleText, { color: lang === "en" ? "#10B981" : "rgba(255,255,255,0.6)" }]}>EN</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.logoRow}>
+            <Ionicons name="navigate" size={28} color="#fff" />
+            <Text style={styles.brandName}>Fluid Navigator</Text>
+          </View>
         </View>
-        <Text style={styles.brandTagline}>
-          اپنا کرایہ خود طے کریں۔ ڈرائیور منتخب کریں۔ آسان سفر کریں۔
-        </Text>
+        <Text style={styles.brandTagline}>{t("appTagline")}</Text>
       </View>
 
       <KeyboardAvoidingView
@@ -205,15 +223,14 @@ export default function AuthScreen() {
 }
 
 function PhoneScreen({ phone, setPhone, onContinue, loading, colors }: any) {
+  const { t } = useLang();
   return (
     <View style={styles.formSection}>
-      <Text style={[styles.screenTitle, { color: colors.foreground }]}>خوش آمدید 👋</Text>
-      <Text style={[styles.screenSub, { color: colors.mutedForeground }]}>
-        اپنا پاکستانی موبائل نمبر درج کریں۔ ہم آپ کو OTP بھیجیں گے۔
-      </Text>
+      <Text style={[styles.screenTitle, { color: colors.foreground }]}>{t("welcome")}</Text>
+      <Text style={[styles.screenSub, { color: colors.mutedForeground }]}>{t("enterPhone")}</Text>
 
       <View style={{ gap: 8, marginTop: 32 }}>
-        <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>موبائل نمبر</Text>
+        <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>{t("mobileNumber")}</Text>
         <View style={styles.phoneRow}>
           <View style={[styles.countryCode, { backgroundColor: colors.surfaceContainerHighest }]}>
             <Text style={{ fontSize: 18 }}>🇵🇰</Text>
@@ -233,9 +250,7 @@ function PhoneScreen({ phone, setPhone, onContinue, loading, colors }: any) {
 
       <View style={[styles.infoBadge, { backgroundColor: colors.primary + "15" }]}>
         <Ionicons name="shield-checkmark" size={14} color={colors.primary} />
-        <Text style={[styles.infoText, { color: colors.primary }]}>
-          آپ کا نمبر محفوظ ہے اور صرف تصدیق کے لیے استعمال ہوگا
-        </Text>
+        <Text style={[styles.infoText, { color: colors.primary }]}>{t("phoneSecurity")}</Text>
       </View>
 
       <TouchableOpacity onPress={onContinue} disabled={loading} activeOpacity={0.85} style={{ marginTop: 20 }}>
@@ -249,7 +264,7 @@ function PhoneScreen({ phone, setPhone, onContinue, loading, colors }: any) {
             <ActivityIndicator color="#fff" />
           ) : (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={styles.mainBtnText}>OTP بھیجیں</Text>
+              <Text style={styles.mainBtnText}>{t("sendOtp")}</Text>
               <Ionicons name="arrow-forward" size={18} color="#fff" />
             </View>
           )}
@@ -260,25 +275,25 @@ function PhoneScreen({ phone, setPhone, onContinue, loading, colors }: any) {
 }
 
 function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify, loading, onResend, colors }: any) {
+  const { t } = useLang();
   const maskedPhone = "0" + phone.replace(/^0/, "").slice(0, 3) + "xxxxxxx";
   return (
     <View style={styles.formSection}>
       <TouchableOpacity onPress={onBack} style={styles.backRow}>
         <Ionicons name="arrow-back" size={22} color={colors.mutedForeground} />
-        <Text style={[styles.backText, { color: colors.mutedForeground }]}>واپس</Text>
+        <Text style={[styles.backText, { color: colors.mutedForeground }]}>{t("back")}</Text>
       </TouchableOpacity>
 
       <View style={[styles.otpIconWrap, { backgroundColor: colors.primary + "15" }]}>
         <Ionicons name="chatbubble-ellipses" size={32} color={colors.primary} />
       </View>
 
-      <Text style={[styles.screenTitle, { color: colors.foreground }]}>OTP درج کریں</Text>
+      <Text style={[styles.screenTitle, { color: colors.foreground }]}>{t("otpSent")}</Text>
       <Text style={[styles.screenSub, { color: colors.mutedForeground }]}>
-        ہم نے{" "}
+        {t("otpSentMsg")}{" "}
         <Text style={{ color: colors.foreground, fontFamily: "Inter_700Bold" }}>
           +92 {maskedPhone}
-        </Text>{" "}
-        پر 4 ہندسوں کا کوڈ بھیجا ہے
+        </Text>
       </Text>
 
       <View style={styles.otpRow}>
@@ -308,14 +323,14 @@ function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify
       {loading && (
         <View style={styles.verifyingRow}>
           <ActivityIndicator color={colors.primary} size="small" />
-          <Text style={[styles.verifyingText, { color: colors.primary }]}>تصدیق ہو رہی ہے...</Text>
+          <Text style={[styles.verifyingText, { color: colors.primary }]}>{t("verifying")}</Text>
         </View>
       )}
 
       <TouchableOpacity onPress={onResend} style={styles.resendBtn}>
         <Text style={[styles.resendText, { color: colors.mutedForeground }]}>
-          کوڈ نہیں آیا؟{" "}
-          <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>دوبارہ بھیجیں</Text>
+          {t("resend")}{" "}
+          <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>{t("resendBtn")}</Text>
         </Text>
       </TouchableOpacity>
 
@@ -330,7 +345,7 @@ function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify
             <ActivityIndicator color="#fff" />
           ) : (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={styles.mainBtnText}>تصدیق کریں</Text>
+              <Text style={styles.mainBtnText}>{t("verify")}</Text>
               <Ionicons name="checkmark" size={18} color="#fff" />
             </View>
           )}
@@ -341,6 +356,7 @@ function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify
 }
 
 function RoleScreen({ onSelect, loading, colors }: any) {
+  const { t } = useLang();
   const [name, setName] = useState("");
   const [selectedRole, setSelectedRole] = useState<"rider" | "driver" | null>(null);
 
@@ -348,16 +364,14 @@ function RoleScreen({ onSelect, loading, colors }: any) {
     <View style={styles.formSection}>
       <View style={[styles.successBadge, { backgroundColor: colors.primary + "15" }]}>
         <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
-        <Text style={[styles.successBadgeText, { color: colors.primary }]}>نمبر تصدیق ہو گیا!</Text>
+        <Text style={[styles.successBadgeText, { color: colors.primary }]}>{t("numberVerified")}</Text>
       </View>
 
-      <Text style={[styles.screenTitle, { color: colors.foreground }]}>پروفائل بنائیں</Text>
-      <Text style={[styles.screenSub, { color: colors.mutedForeground }]}>
-        اپنا نام اور کردار منتخب کریں
-      </Text>
+      <Text style={[styles.screenTitle, { color: colors.foreground }]}>{t("createProfile")}</Text>
+      <Text style={[styles.screenSub, { color: colors.mutedForeground }]}>{t("profileSub")}</Text>
 
       <View style={{ gap: 8, marginTop: 24, marginBottom: 8 }}>
-        <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>آپ کا نام</Text>
+        <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>{t("yourName")}</Text>
         <TextInput
           style={[
             styles.nameInput,
@@ -369,14 +383,14 @@ function RoleScreen({ onSelect, loading, colors }: any) {
           ]}
           value={name}
           onChangeText={setName}
-          placeholder="مکمل نام لکھیں"
+          placeholder={t("namePlaceholder")}
           placeholderTextColor={colors.mutedForeground}
           autoCapitalize="words"
         />
       </View>
 
       <Text style={[styles.inputLabel, { color: colors.mutedForeground, marginBottom: 10, marginTop: 8 }]}>
-        میں ہوں...
+        {t("iAm")}
       </Text>
 
       <View style={{ gap: 10 }}>
@@ -392,8 +406,8 @@ function RoleScreen({ onSelect, loading, colors }: any) {
                 <Ionicons name="person" size={24} color="#10B981" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.roleCardTitleSelected}>مسافر (Rider)</Text>
-                <Text style={styles.roleCardSubSelected}>سواری بک کریں، قیمت خود طے کریں</Text>
+                <Text style={styles.roleCardTitleSelected}>{t("rider")}</Text>
+                <Text style={styles.roleCardSubSelected}>{t("riderSub")}</Text>
               </View>
               <View style={styles.roleCheck}>
                 <Ionicons name="checkmark" size={16} color="#10B981" />
@@ -405,8 +419,8 @@ function RoleScreen({ onSelect, loading, colors }: any) {
                 <Ionicons name="person" size={24} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.roleCardTitle, { color: colors.foreground }]}>مسافر (Rider)</Text>
-                <Text style={[styles.roleCardSub, { color: colors.mutedForeground }]}>سواری بک کریں، قیمت خود طے کریں</Text>
+                <Text style={[styles.roleCardTitle, { color: colors.foreground }]}>{t("rider")}</Text>
+                <Text style={[styles.roleCardSub, { color: colors.mutedForeground }]}>{t("riderSub")}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.border} />
             </View>
@@ -425,8 +439,8 @@ function RoleScreen({ onSelect, loading, colors }: any) {
                 <Ionicons name="car-sport" size={24} color="#2170E4" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.roleCardTitleSelected}>ڈرائیور (Driver)</Text>
-                <Text style={styles.roleCardSubSelected}>سواریاں قبول کریں، آمدنی بڑھائیں</Text>
+                <Text style={styles.roleCardTitleSelected}>{t("driver")}</Text>
+                <Text style={styles.roleCardSubSelected}>{t("driverSub")}</Text>
               </View>
               <View style={styles.roleCheck}>
                 <Ionicons name="checkmark" size={16} color="#2170E4" />
@@ -438,8 +452,8 @@ function RoleScreen({ onSelect, loading, colors }: any) {
                 <Ionicons name="car-sport" size={24} color={colors.secondary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.roleCardTitle, { color: colors.foreground }]}>ڈرائیور (Driver)</Text>
-                <Text style={[styles.roleCardSub, { color: colors.mutedForeground }]}>سواریاں قبول کریں، آمدنی بڑھائیں</Text>
+                <Text style={[styles.roleCardTitle, { color: colors.foreground }]}>{t("driver")}</Text>
+                <Text style={[styles.roleCardSub, { color: colors.mutedForeground }]}>{t("driverSub")}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.border} />
             </View>
@@ -464,7 +478,7 @@ function RoleScreen({ onSelect, loading, colors }: any) {
               <ActivityIndicator color="#fff" />
             ) : (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={styles.mainBtnText}>شروع کریں</Text>
+                <Text style={styles.mainBtnText}>{t("getStarted")}</Text>
                 <Ionicons name="rocket" size={18} color="#fff" />
               </View>
             )}
@@ -483,7 +497,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   logoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  brandName: { fontSize: 26, fontFamily: "Inter_700Bold", color: "#fff", letterSpacing: -0.5 },
+  brandName: { fontSize: 22, fontFamily: "Inter_700Bold", color: "#fff", letterSpacing: -0.5 },
+  langToggleRow: { flexDirection: "row", gap: 4, backgroundColor: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 3 },
+  langToggleBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9 },
+  langToggleActive: { backgroundColor: "#fff" },
+  langToggleText: { fontSize: 12, fontFamily: "Inter_700Bold" },
   brandTagline: {
     fontSize: 15, color: "rgba(255,255,255,0.85)",
     fontFamily: "Inter_400Regular", lineHeight: 22,

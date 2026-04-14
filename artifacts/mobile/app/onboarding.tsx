@@ -13,39 +13,41 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { useLang } from "@/context/LanguageContext";
 
 const { width } = Dimensions.get("window");
-
-const SLIDES = [
-  {
-    icon: "car-sport" as const,
-    title: "Book rides\neasily.",
-    accent: "easily.",
-    body: "Experience seamless urban mobility with one-tap requests and precise vehicle tracking.",
-    color: "#10B981",
-  },
-  {
-    icon: "pricetag" as const,
-    title: "Set your\nown fare.",
-    accent: "own fare.",
-    body: "The power is in your hands. Negotiate with drivers and find the price that fits your budget.",
-    color: "#2170E4",
-  },
-  {
-    icon: "shield-checkmark" as const,
-    title: "Safe and\nreliable.",
-    accent: "reliable.",
-    body: "Ride with peace of mind. All drivers are background-checked and rated by the community.",
-    color: "#10B981",
-  },
-];
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const { setOnboarded } = useApp();
+  const { t, isUrdu } = useLang();
   const [current, setCurrent] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+
+  const SLIDES = [
+    {
+      icon: "car-sport" as const,
+      title: isUrdu ? t("rideEasily") : "Book rides\neasily.",
+      accent: isUrdu ? "آسان کریں۔" : "easily.",
+      body: t("rideEasilyBody"),
+      color: "#10B981",
+    },
+    {
+      icon: "pricetag" as const,
+      title: isUrdu ? t("setFare") : "Set your\nown fare.",
+      accent: isUrdu ? "کرایہ طے کریں۔" : "own fare.",
+      body: t("setFareBody"),
+      color: "#2170E4",
+    },
+    {
+      icon: "shield-checkmark" as const,
+      title: isUrdu ? t("safeReliable") : "Safe and\nreliable.",
+      accent: isUrdu ? "قابل اعتماد۔" : "reliable.",
+      body: t("safeBody"),
+      color: "#10B981",
+    },
+  ];
 
   const goNext = async () => {
     if (current < SLIDES.length - 1) {
@@ -80,7 +82,7 @@ export default function OnboardingScreen() {
           <Text style={[styles.logoText, { color: colors.foreground }]}>Fluid</Text>
         </View>
         <TouchableOpacity onPress={skip}>
-          <Text style={[styles.skip, { color: colors.mutedForeground }]}>SKIP</Text>
+          <Text style={[styles.skip, { color: colors.mutedForeground }]}>{t("skip")}</Text>
         </TouchableOpacity>
       </View>
 
@@ -151,7 +153,7 @@ export default function OnboardingScreen() {
             style={styles.btn}
           >
             <Text style={styles.btnText}>
-              {current < SLIDES.length - 1 ? "Next" : "Get Started"}
+              {current < SLIDES.length - 1 ? t("next") : t("getStarted")}
             </Text>
             <Ionicons name="arrow-forward" size={20} color="#fff" />
           </LinearGradient>

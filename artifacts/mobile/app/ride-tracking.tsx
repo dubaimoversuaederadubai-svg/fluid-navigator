@@ -12,21 +12,19 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/context/AppContext";
+import { useLang } from "@/context/LanguageContext";
 import { useColors } from "@/hooks/useColors";
 import { useCancelRide, useCompleteRide, useGetActiveRide } from "@workspace/api-client-react";
-
-const STATUS_LABELS: Record<string, string> = {
-  accepted: "Driver accepted your ride",
-  on_the_way: "Driver is on the way",
-  trip_started: "Trip in progress",
-  searching: "Finding a driver...",
-};
+import LeafletMap from "@/components/LeafletMap";
 
 export default function RideTrackingScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const { activeRide, setActiveRide } = useApp();
+  const { t } = useLang();
+  const queryClient = useQueryClient();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -41,6 +39,13 @@ export default function RideTrackingScreen() {
   const rideId = activeRide?.id ?? activeRideData?.ride?.id ?? "";
   const currentStatus = activeRideData?.ride?.status ?? activeRide?.status ?? "accepted";
 
+  const STATUS_LABELS: Record<string, string> = {
+    accepted: t("accepted" as any) ?? "Driver accepted your ride",
+    on_the_way: "Driver is on the way",
+    trip_started: "Trip in progress",
+    searching: "Finding a driver...",
+  };
+
   if (!activeRide && !activeRideData?.ride) {
     router.replace("/(tabs)/home");
     return null;
@@ -49,8 +54,8 @@ export default function RideTrackingScreen() {
   const ride = activeRide ?? {
     driverName: activeRideData?.ride?.driverName ?? "Driver",
     driverRating: activeRideData?.ride?.driverRating ?? 4.9,
-    carModel: activeRideData?.ride?.carModel ?? "Toyota Camry",
-    carPlate: "CALI 7X9",
+    carModel: activeRideData?.ride?.carModel ?? "Suzuki Alto",
+    carPlate: activeRideData?.ride?.carPlate ?? "LHR-2024",
     pickup: activeRideData?.ride?.pickup ?? "",
     dropoff: activeRideData?.ride?.dropoff ?? "",
     fare: activeRideData?.ride?.finalFare ?? activeRideData?.ride?.offeredFare ?? 0,
@@ -60,15 +65,16 @@ export default function RideTrackingScreen() {
   };
 
   const cancelRide = () => {
-    Alert.alert("Cancel Ride", "Are you sure?", [
-      { text: "No", style: "cancel" },
+    Alert.alert(t("cancelRide"), t("cancelConfirm"), [
+      { text: t("no"), style: "cancel" },
       {
-        text: "Yes, Cancel",
+        text: t("yesCancel"),
         style: "destructive",
         onPress: async () => {
           try {
             await cancelMutation.mutateAsync({ rideId });
           } catch {}
+          queryClient.clear();
           setActiveRide(null);
           router.replace("/(tabs)/home");
         },
@@ -80,38 +86,29 @@ export default function RideTrackingScreen() {
     try {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await completeMutation.mutateAsync({ rideId });
+      queryClient.clear();
       setActiveRide(null);
       router.replace({
         pathname: "/trip-summary",
         params: { rideId },
       });
     } catch {
-      Alert.alert("Error", "Could not complete ride.");
+      Alert.alert(t("error"), "Could not complete ride.");
     }
   };
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[styles.mapArea, { backgroundColor: "#c8d8c9" }]}>
-        <View style={styles.mapGrid}>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <View key={i} style={[styles.mapLine, { backgroundColor: "#a8c8a9", top: `${i * 14}%` as any }]} />
-          ))}
-        </View>
-
-        <View style={[styles.driverPin, { top: "40%", left: "50%" }]}>
-          <View style={styles.pingOuter}>
-            <View style={[styles.pingInner, { backgroundColor: colors.card }]}>
-              <Ionicons name="car" size={24} color="#10B981" />
-            </View>
-          </View>
-          <View style={[styles.driverLabel, { backgroundColor: colors.foreground }]}>
-            <Text style={styles.driverLabelText}>{ride.driverName} • {ride.eta}</Text>
-          </View>
-        </View>
-
-        <View style={[styles.userPin, { top: "70%", left: "45%" }]}>
-          <View style={[styles.userDot, { backgroundColor: colors.secondary, borderColor: colors.card }]} />
+      <View style={styles.mapArea}>
+        <LeafletMap
+          pickupAddress={ride.pickup}
+          dropoffAddress={ride.dropoff}
+          mode="tracking"
+          vehicleType="car"
+          style={{ flex: 1 }}
+        />
+        <View style={[styles.pkFlag, { top: 8, right: 8, backgroundColor: colors.card + "CC" }]}>
+          <Text>🇵🇰</Text>
         </View>
       </View>
 
@@ -124,7 +121,7 @@ export default function RideTrackingScreen() {
         </TouchableOpacity>
         <View style={[styles.tripStatusPill, { backgroundColor: colors.primary + "15" }]}>
           <View style={[styles.tripDot, { backgroundColor: colors.primary }]} />
-          <Text style={[styles.tripStatusText, { color: colors.primary }]}>ON TRIP</Text>
+          <Text style={[styles.tripStatusText, { color: colors.primary }]}>{t("onTrip")}</Text>
         </View>
       </View>
 
@@ -134,7 +131,7 @@ export default function RideTrackingScreen() {
             <Text style={[styles.etaNum, { color: colors.foreground }]}>
               {ride.eta}
             </Text>
-            <Text style={[styles.etaLabel, { color: colors.mutedForeground }]}>ESTIMATED ARRIVAL</Text>
+            <Text style={[styles.etaLabel, { color: colors.mutedForeground }]}>{t("eta")}</Text>
           </View>
           <View style={[styles.boltBtn, { backgroundColor: colors.primary + "15" }]}>
             <Ionicons name="flash" size={20} color={colors.primary} />
@@ -158,7 +155,7 @@ export default function RideTrackingScreen() {
             </LinearGradient>
             <View style={styles.driverInfo}>
               <Text style={[styles.driverName, { color: colors.foreground }]}>{ride.driverName}</Text>
-              <Text style={[styles.driverRole, { color: colors.mutedForeground }]}>VERIFIED DRIVER</Text>
+              <Text style={[styles.driverRole, { color: colors.mutedForeground }]}>{t("verifiedDriver")}</Text>
             </View>
             <View style={[styles.ratingBadge, { backgroundColor: "#F59E0B" + "15" }]}>
               <Ionicons name="star" size={12} color="#F59E0B" />
@@ -168,13 +165,17 @@ export default function RideTrackingScreen() {
 
           <View style={[styles.carInfo, { backgroundColor: colors.surfaceContainerLow }]}>
             <View>
-              <Text style={[styles.carModel, { color: colors.foreground }]}>{ride.carModel?.split("•")[0]?.trim() ?? "Vehicle"}</Text>
+              <Text style={[styles.carModel, { color: colors.foreground }]}>
+                {ride.carModel?.split("•")[0]?.trim() ?? "Suzuki Alto"}
+              </Text>
               <Text style={[styles.carDetail, { color: colors.mutedForeground }]}>
-                ${ride.fare.toFixed(2)} FARE
+                Rs {ride.fare?.toFixed(0)} {t("fare")}
               </Text>
             </View>
             <View style={[styles.plateBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.plateText, { color: colors.foreground }]}>{ride.carPlate}</Text>
+              <Text style={[styles.plateText, { color: colors.foreground }]}>
+                {(ride as any).carPlate ?? "LHR-2024"}
+              </Text>
             </View>
           </View>
         </View>
@@ -182,11 +183,11 @@ export default function RideTrackingScreen() {
         <View style={styles.actions}>
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.secondary + "20" }]} activeOpacity={0.8}>
             <Ionicons name="call" size={22} color={colors.secondary} />
-            <Text style={[styles.actionLabel, { color: colors.secondary }]}>Call</Text>
+            <Text style={[styles.actionLabel, { color: colors.secondary }]}>{t("call")}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.secondary + "20" }]} activeOpacity={0.8}>
             <Ionicons name="chatbubble" size={22} color={colors.secondary} />
-            <Text style={[styles.actionLabel, { color: colors.secondary }]}>Chat</Text>
+            <Text style={[styles.actionLabel, { color: colors.secondary }]}>{t("chat")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: colors.destructive + "20" }]}
@@ -194,7 +195,7 @@ export default function RideTrackingScreen() {
             activeOpacity={0.8}
           >
             <Ionicons name="close-circle" size={22} color={colors.destructive} />
-            <Text style={[styles.actionLabel, { color: colors.destructive }]}>Cancel</Text>
+            <Text style={[styles.actionLabel, { color: colors.destructive }]}>{t("cancel")}</Text>
           </TouchableOpacity>
         </View>
 
@@ -205,12 +206,12 @@ export default function RideTrackingScreen() {
             end={{ x: 1, y: 0 }}
             style={styles.completeBtn}
           >
-            <Text style={styles.completeBtnText}>Trip Complete</Text>
+            <Text style={styles.completeBtnText}>{t("completeTrip")}</Text>
             <Ionicons name="checkmark-circle" size={20} color="#fff" />
           </LinearGradient>
         </TouchableOpacity>
 
-        <View style={{ height: botPad + 70 }} />
+        <View style={{ height: botPad + 8 }} />
       </View>
     </View>
   );
@@ -219,23 +220,7 @@ export default function RideTrackingScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   mapArea: { flex: 1, position: "relative", overflow: "hidden" },
-  mapGrid: { ...StyleSheet.absoluteFillObject },
-  mapLine: { position: "absolute", left: 0, right: 0, height: 1, opacity: 0.5 },
-  driverPin: { position: "absolute", alignItems: "center" },
-  pingOuter: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: "#10B981" + "30",
-    alignItems: "center", justifyContent: "center",
-  },
-  pingInner: {
-    width: 48, height: 48, borderRadius: 24,
-    alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 8, elevation: 4,
-  },
-  driverLabel: { marginTop: 4, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3 },
-  driverLabelText: { color: "#fff", fontSize: 10, fontFamily: "Inter_700Bold" },
-  userPin: { position: "absolute" },
-  userDot: { width: 20, height: 20, borderRadius: 10, borderWidth: 3, shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 4, elevation: 3 },
+  pkFlag: { position: "absolute", padding: 6, borderRadius: 10, flexDirection: "row", alignItems: "center", zIndex: 10 },
   headerOverlay: { position: "absolute", top: 0, left: 0, right: 0, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, elevation: 3 },
   tripStatusPill: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },

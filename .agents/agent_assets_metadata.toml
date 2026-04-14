@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "PxEWrPTmdHlm93He1h-ea"
+uri = "file://artifacts/mobile/assets/images/icon.png"
+type = "image"
+title = "fluid_navigator_icon"

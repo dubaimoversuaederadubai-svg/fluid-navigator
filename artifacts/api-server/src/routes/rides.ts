@@ -23,7 +23,8 @@ async function formatRide(ride: any, riderUser: any, driverUser?: any) {
     riderRating: riderUser?.rating ?? 5,
     driverName: driverUser?.name ?? null,
     driverRating: driverUser?.rating ?? null,
-    carModel: driverUser ? "Toyota Camry • Silver" : null,
+    carModel: driverUser?.vehicleModel ?? (driverUser ? "Suzuki Alto" : null),
+    carPlate: driverUser?.vehicleNumber ?? (driverUser ? "LHR-2024" : null),
   };
 }
 

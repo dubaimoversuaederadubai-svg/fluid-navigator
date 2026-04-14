@@ -6,6 +6,7 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,25 +14,45 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { RouteConnector } from "@/components/RouteConnector";
 import { useApp } from "@/context/AppContext";
+import { useLang } from "@/context/LanguageContext";
 import { useColors } from "@/hooks/useColors";
 import { useCreateRide, useListBids, useAcceptBid } from "@workspace/api-client-react";
+import LeafletMap, { MapMessage } from "@/components/LeafletMap";
+import { VEHICLE_CONFIG, VehicleType, calculateFare, formatDistance, formatDuration } from "@/utils/fareCalc";
+
+const { height } = Dimensions.get("window");
 
 export default function FareNegotiationScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const { setActiveRide } = useApp();
-  const params = useLocalSearchParams<{ pickup?: string; dropoff?: string }>();
-  const [myFare, setMyFare] = useState(500);
-  const [rideId, setRideId] = useState<string | null>(null);
+  const { t, isUrdu } = useLang();
+  const params = useLocalSearchParams<{
+    pickup?: string;
+    dropoff?: string;
+    vehicleType?: string;
+    distanceKm?: string;
+    durationMin?: string;
+    suggestedFare?: string;
+  }>();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const pickup = params.pickup ?? "گلبرگ، لاہور";
-  const dropoff = params.dropoff ?? "ایئرپورٹ، لاہور";
+  const pickup = params.pickup ?? (isUrdu ? "گلبرگ، لاہور" : "Gulberg, Lahore");
+  const dropoff = params.dropoff ?? (isUrdu ? "ایئرپورٹ، لاہور" : "Airport, Lahore");
+  const vehicleType = (params.vehicleType as VehicleType) ?? "car";
+  const distanceKm = parseFloat(params.distanceKm ?? "0");
+  const durationMin = parseInt(params.durationMin ?? "0");
+  const suggested = parseInt(params.suggestedFare ?? "0");
+
+  const vehicleCfg = VEHICLE_CONFIG[vehicleType];
+  const [myFare, setMyFare] = useState(suggested > 0 ? suggested : vehicleCfg.minFare);
+  const [rideId, setRideId] = useState<string | null>(null);
+  const [routeKm, setRouteKm] = useState(distanceKm);
 
   const createRideMutation = useCreateRide();
   const { data: bidsData, refetch: refetchBids } = useListBids(
@@ -41,19 +62,34 @@ export default function FareNegotiationScreen() {
   const acceptBidMutation = useAcceptBid();
 
   const adjustFare = (delta: number) => {
-    setMyFare((prev) => Math.max(100, prev + delta));
+    setMyFare((prev) => Math.max(vehicleCfg.minFare, prev + delta));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleMapMessage = (msg: MapMessage) => {
+    if (msg.type === "distance" && msg.distanceKm) {
+      setRouteKm(msg.distanceKm);
+      const newFare = calculateFare(msg.distanceKm, vehicleType);
+      setMyFare(newFare);
+    }
   };
 
   const postRide = async () => {
     try {
+      const km = routeKm > 0 ? routeKm : distanceKm;
       const resp = await createRideMutation.mutateAsync({
-        data: { pickup, dropoff, offeredFare: myFare, distance: "15 کلومیٹر", duration: "30 منٹ" },
+        data: {
+          pickup,
+          dropoff,
+          offeredFare: myFare,
+          distance: km > 0 ? `${km.toFixed(1)} ${isUrdu ? "کلومیٹر" : "km"}` : "",
+          duration: durationMin > 0 ? formatDuration(durationMin) : "",
+        },
       });
       setRideId(resp.ride.id);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      Alert.alert("خرابی", "سواری پوسٹ نہیں ہو سکی۔ دوبارہ کوشش کریں۔");
+      Alert.alert(t("error"), isUrdu ? "سواری پوسٹ نہیں ہو سکی۔" : "Could not post ride.");
     }
   };
 
@@ -67,8 +103,8 @@ export default function FareNegotiationScreen() {
         id: r.id,
         driverName: r.driverName ?? bid.driverName,
         driverRating: r.driverRating ?? bid.driverRating,
-        carModel: r.carModel ?? "Suzuki Alto",
-        carPlate: "LHR-2024",
+        carModel: r.carModel ?? `${vehicleCfg.emoji} ${isUrdu ? vehicleCfg.label : vehicleCfg.labelEn}`,
+        carPlate: (r as any).carPlate ?? "LHR-2024",
         status: "accepted",
         pickup: r.pickup,
         dropoff: r.dropoff,
@@ -81,7 +117,7 @@ export default function FareNegotiationScreen() {
       });
       router.replace("/ride-tracking");
     } catch {
-      Alert.alert("خرابی", "بولی قبول نہیں ہو سکی۔");
+      Alert.alert(t("error"), isUrdu ? "بولی قبول نہیں ہو سکی۔" : "Could not accept bid.");
     }
   };
 
@@ -89,15 +125,44 @@ export default function FareNegotiationScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: topPad + 12 }]}>
+      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.card }]}>
         <TouchableOpacity
           onPress={() => router.back()}
           style={[styles.backBtn, { backgroundColor: colors.surfaceContainerLow }]}
         >
           <Ionicons name="arrow-back" size={22} color={colors.foreground} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>کرایہ طے کریں</Text>
-        <View style={{ width: 44 }} />
+
+        <View style={styles.headerCenter}>
+          <Text style={styles.vehicleEmoji}>{vehicleCfg.emoji}</Text>
+          <View>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+              {isUrdu ? vehicleCfg.label : vehicleCfg.labelEn}
+            </Text>
+            {routeKm > 0 && (
+              <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+                {formatDistance(routeKm)}  •  {durationMin > 0 ? formatDuration(durationMin) : ""}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        <View style={[styles.minFareBadge, { backgroundColor: vehicleCfg.color + "15" }]}>
+          <Text style={[styles.minFareText, { color: vehicleCfg.color }]}>
+            {isUrdu ? `کم از کم Rs ${vehicleCfg.minFare}` : `Min Rs ${vehicleCfg.minFare}`}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.mapArea}>
+        <LeafletMap
+          pickupAddress={pickup}
+          dropoffAddress={dropoff}
+          mode="picker"
+          vehicleType={vehicleType}
+          onMessage={handleMapMessage}
+          style={{ flex: 1 }}
+        />
       </View>
 
       <ScrollView
@@ -105,24 +170,30 @@ export default function FareNegotiationScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: botPad + 20 }}
       >
         <View style={[styles.fareCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.fareCardTitle, { color: colors.foreground }]}>اپنا کرایہ طے کریں</Text>
-          <Text style={[styles.fareCardSub, { color: colors.mutedForeground }]}>
-            کرایہ لکھیں — ڈرائیور اپنی بولی دیں گے
-          </Text>
+          <View style={styles.fareCardHeader}>
+            <Text style={[styles.fareCardTitle, { color: colors.foreground, textAlign: isUrdu ? "right" : "left" }]}>
+              {isUrdu ? "اپنا کرایہ طے کریں" : "Set Your Fare"}
+            </Text>
+            <View style={[styles.perKmBadge, { backgroundColor: vehicleCfg.color + "15" }]}>
+              <Text style={[styles.perKmText, { color: vehicleCfg.color }]}>
+                Rs {vehicleCfg.perKm}/{isUrdu ? "کلومیٹر" : "km"}
+              </Text>
+            </View>
+          </View>
 
           <View style={styles.fareInputRow}>
             <TouchableOpacity
-              onPress={() => adjustFare(-50)}
+              onPress={() => adjustFare(-10)}
               style={[styles.fareBtn, { backgroundColor: colors.surfaceContainerHigh }]}
             >
               <Ionicons name="remove" size={22} color={colors.foreground} />
             </TouchableOpacity>
             <View style={styles.fareDisplay}>
-              <Text style={[styles.fareCurrency, { color: colors.primary }]}>Rs</Text>
+              <Text style={[styles.fareCurrency, { color: vehicleCfg.color }]}>Rs</Text>
               <Text style={[styles.fareAmount, { color: colors.foreground }]}>{myFare}</Text>
             </View>
             <TouchableOpacity
-              onPress={() => adjustFare(50)}
+              onPress={() => adjustFare(10)}
               style={[styles.fareBtn, { backgroundColor: colors.surfaceContainerHigh }]}
             >
               <Ionicons name="add" size={22} color={colors.foreground} />
@@ -130,7 +201,19 @@ export default function FareNegotiationScreen() {
           </View>
 
           <View style={[styles.routeBox, { backgroundColor: colors.surfaceContainerLow }]}>
-            <RouteConnector pickup={pickup} dropoff={dropoff} />
+            <View style={styles.routeRow}>
+              <Ionicons name="navigate-circle" size={18} color="#10B981" />
+              <Text style={[styles.routeText, { color: colors.foreground, textAlign: isUrdu ? "right" : "left", flex: 1 }]} numberOfLines={1}>
+                {pickup}
+              </Text>
+            </View>
+            <View style={[styles.routeDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.routeRow}>
+              <Ionicons name="location" size={18} color="#EF4444" />
+              <Text style={[styles.routeText, { color: colors.foreground, textAlign: isUrdu ? "right" : "left", flex: 1 }]} numberOfLines={1}>
+                {dropoff}
+              </Text>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -148,7 +231,9 @@ export default function FareNegotiationScreen() {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.updateBtnText}>
-                  {rideId ? "بولیاں تازہ کریں" : "سواری پوسٹ کریں"}
+                  {rideId
+                    ? (isUrdu ? "بولیاں تازہ کریں" : "Refresh Bids")
+                    : (isUrdu ? "سواری پوسٹ کریں" : "Post Ride")}
                 </Text>
               )}
             </LinearGradient>
@@ -158,7 +243,7 @@ export default function FareNegotiationScreen() {
             <View style={[styles.postedBadge, { backgroundColor: colors.primary + "15" }]}>
               <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
               <Text style={[styles.postedText, { color: colors.primary }]}>
-                سواری پوسٹ ہو گئی — بولیوں کا انتظار ہے
+                {isUrdu ? "سواری پوسٹ ہو گئی — بولیوں کا انتظار ہے" : "Ride posted — waiting for bids"}
               </Text>
             </View>
           )}
@@ -170,18 +255,22 @@ export default function FareNegotiationScreen() {
               {rideId && (
                 <View style={[styles.livePill, { backgroundColor: colors.primary + "20" }]}>
                   <View style={[styles.liveDot, { backgroundColor: colors.primary }]} />
-                  <Text style={[styles.liveText, { color: colors.primary }]}>لائیو</Text>
+                  <Text style={[styles.liveText, { color: colors.primary }]}>
+                    {isUrdu ? "لائیو" : "LIVE"}
+                  </Text>
                 </View>
               )}
             </View>
-            <View style={{ alignItems: "flex-end" }}>
+            <View style={{ alignItems: isUrdu ? "flex-end" : "flex-start" }}>
               <Text style={[styles.bidsTitle, { color: colors.foreground }]}>
-                {rideId ? "ڈرائیوروں کی بولیاں" : "قریبی ڈرائیور"}
+                {rideId ? (isUrdu ? "ڈرائیوروں کی بولیاں" : "Driver Bids") : (isUrdu ? "قریبی ڈرائیور" : "Nearby Drivers")}
               </Text>
               <Text style={[styles.bidsSub, { color: colors.mutedForeground }]}>
                 {bids.length > 0
-                  ? `${bids.length} ڈرائیور نے بولی دی`
-                  : rideId ? "بولیوں کا انتظار ہے..." : "سواری پوسٹ کریں"}
+                  ? `${bids.length} ${isUrdu ? "ڈرائیور نے بولی دی" : "drivers bid"}`
+                  : rideId
+                    ? (isUrdu ? "بولیوں کا انتظار ہے..." : "Waiting for bids...")
+                    : (isUrdu ? "سواری پوسٹ کریں" : "Post ride to get bids")}
               </Text>
             </View>
           </View>
@@ -190,7 +279,7 @@ export default function FareNegotiationScreen() {
             <View style={styles.waitingState}>
               <ActivityIndicator color={colors.primary} />
               <Text style={[styles.waitingText, { color: colors.mutedForeground }]}>
-                ڈرائیور آپ کی سواری دیکھ کر بولی دیں گے
+                {isUrdu ? "ڈرائیور آپ کی سواری دیکھ کر بولی دیں گے" : "Drivers will bid on your ride"}
               </Text>
             </View>
           )}
@@ -202,6 +291,8 @@ export default function FareNegotiationScreen() {
               colors={colors}
               onAccept={() => handleAcceptBid(bid.id, bid)}
               loading={acceptBidMutation.isPending}
+              isUrdu={isUrdu}
+              vehicleCfg={vehicleCfg}
             />
           ))}
         </View>
@@ -210,29 +301,35 @@ export default function FareNegotiationScreen() {
   );
 }
 
-function BidCard({ bid, colors, onAccept, loading }: any) {
+function BidCard({ bid, colors, onAccept, loading, isUrdu, vehicleCfg }: any) {
   return (
     <View style={[styles.bidCard, { backgroundColor: colors.card }]}>
       <View style={styles.bidTop}>
         <LinearGradient colors={["#10B981", "#2170E4"]} style={styles.driverAvatar}>
-          <Text style={styles.driverAvatarText}>{bid.driverName?.charAt(0) ?? "ڈ"}</Text>
+          <Text style={styles.driverAvatarText}>{bid.driverName?.charAt(0) ?? "D"}</Text>
         </LinearGradient>
 
         <View style={{ flex: 1 }}>
-          <Text style={[styles.driverName, { color: colors.foreground }]}>{bid.driverName}</Text>
-          <View style={styles.ratingRow}>
+          <Text style={[styles.driverName, { color: colors.foreground, textAlign: isUrdu ? "right" : "left" }]}>{bid.driverName}</Text>
+          <View style={[styles.ratingRow, { justifyContent: isUrdu ? "flex-end" : "flex-start" }]}>
             <Text style={[styles.ratingVal, { color: colors.foreground }]}>{bid.driverRating}</Text>
             <Ionicons name="star" size={12} color="#F59E0B" />
           </View>
-          <Text style={[styles.carLabel, { color: colors.mutedForeground }]}>{bid.carModel}</Text>
-          <View style={[styles.etaChip, { backgroundColor: colors.primary + "15" }]}>
-            <Text style={[styles.etaChipText, { color: colors.primary }]}>وقت: {bid.eta}</Text>
+          <Text style={[styles.carLabel, { color: colors.mutedForeground, textAlign: isUrdu ? "right" : "left" }]}>
+            {vehicleCfg.emoji} {bid.carModel ?? (isUrdu ? vehicleCfg.label : vehicleCfg.labelEn)}
+          </Text>
+          <View style={[styles.etaChip, { backgroundColor: colors.primary + "15", alignSelf: isUrdu ? "flex-end" : "flex-start" }]}>
+            <Text style={[styles.etaChipText, { color: colors.primary }]}>
+              {isUrdu ? "وقت:" : "ETA:"} {bid.eta}
+            </Text>
           </View>
         </View>
 
         <View style={styles.bidPriceCol}>
           <Text style={[styles.bidPrice, { color: colors.primary }]}>Rs {bid.amount.toFixed(0)}</Text>
-          <Text style={[styles.bidPriceLabel, { color: colors.mutedForeground }]}>بولی</Text>
+          <Text style={[styles.bidPriceLabel, { color: colors.mutedForeground }]}>
+            {isUrdu ? "بولی" : "Bid"}
+          </Text>
         </View>
       </View>
 
@@ -244,14 +341,16 @@ function BidCard({ bid, colors, onAccept, loading }: any) {
             end={{ x: 1, y: 0 }}
             style={styles.acceptBtn}
           >
-            {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.acceptText}>قبول کریں</Text>}
+            {loading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={styles.acceptText}>{isUrdu ? "قبول کریں" : "Accept"}</Text>}
           </LinearGradient>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.rejectBtn, { backgroundColor: colors.surfaceContainerHigh }]}
           activeOpacity={0.8}
         >
-          <Text style={[styles.rejectText, { color: colors.foreground }]}>رد کریں</Text>
+          <Text style={[styles.rejectText, { color: colors.foreground }]}>{isUrdu ? "رد کریں" : "Decline"}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -260,18 +359,33 @@ function BidCard({ bid, colors, onAccept, loading }: any) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 8 },
-  backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  header: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingBottom: 12, gap: 12,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 3,
+  },
+  backBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  headerCenter: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
+  vehicleEmoji: { fontSize: 28 },
   headerTitle: { fontSize: 17, fontFamily: "Inter_700Bold" },
-  fareCard: { borderRadius: 24, padding: 20, marginBottom: 20, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 16, elevation: 3, gap: 14 },
-  fareCardTitle: { fontSize: 22, fontFamily: "Inter_700Bold", letterSpacing: -0.5, textAlign: "right" },
-  fareCardSub: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19, textAlign: "right" },
+  headerSub: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  minFareBadge: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
+  minFareText: { fontSize: 11, fontFamily: "Inter_700Bold" },
+  mapArea: { height: height * 0.28, overflow: "hidden" },
+  fareCard: { borderRadius: 24, padding: 20, marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 16, elevation: 3, gap: 14 },
+  fareCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  fareCardTitle: { fontSize: 20, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  perKmBadge: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
+  perKmText: { fontSize: 11, fontFamily: "Inter_700Bold" },
   fareInputRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   fareBtn: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   fareDisplay: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
   fareCurrency: { fontSize: 22, fontFamily: "Inter_700Bold" },
   fareAmount: { fontSize: 44, fontFamily: "Inter_700Bold", letterSpacing: -1 },
-  routeBox: { borderRadius: 16, padding: 14 },
+  routeBox: { borderRadius: 16, padding: 14, gap: 8 },
+  routeRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  routeText: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  routeDivider: { height: 1, marginLeft: 28 },
   updateBtn: { height: 52, borderRadius: 999, alignItems: "center", justifyContent: "center" },
   updateBtnText: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold" },
   postedBadge: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 10, padding: 10, justifyContent: "center" },
@@ -289,11 +403,11 @@ const styles = StyleSheet.create({
   bidTop: { flexDirection: "row", gap: 12, marginBottom: 14 },
   driverAvatar: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
   driverAvatarText: { color: "#fff", fontSize: 20, fontFamily: "Inter_700Bold" },
-  driverName: { fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 2, textAlign: "right" },
-  ratingRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 2, justifyContent: "flex-end" },
+  driverName: { fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 2 },
+  ratingRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 2 },
   ratingVal: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  carLabel: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4, textAlign: "right" },
-  etaChip: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-end" },
+  carLabel: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4 },
+  etaChip: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   etaChipText: { fontSize: 10, fontFamily: "Inter_700Bold" },
   bidPriceCol: { alignItems: "flex-start", justifyContent: "center", gap: 2 },
   bidPrice: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },

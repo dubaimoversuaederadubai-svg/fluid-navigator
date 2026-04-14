@@ -12,10 +12,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGetRideHistory } from "@workspace/api-client-react";
 import { useColors } from "@/hooks/useColors";
+import { useLang } from "@/context/LanguageContext";
 
 export default function ActivityScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
+  const { t } = useLang();
   const { data, isLoading, refetch, isRefetching } = useGetRideHistory();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -28,9 +30,9 @@ export default function ActivityScreen() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: topPad + 16, paddingBottom: 16 }]}>
         <View style={{ alignItems: "flex-end" }}>
-          <Text style={[styles.title, { color: colors.foreground }]}>سفری سرگزشت</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>{t("history")}</Text>
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-            {trips.length} سفر مکمل • کل: Rs {total.toFixed(0)}
+            {trips.length} {t("tripsCompleted")} • {t("totalSpent")}: Rs {total.toFixed(0)}
           </Text>
         </View>
         <TouchableOpacity onPress={refetch} style={[styles.refreshBtn, { backgroundColor: colors.surfaceContainerLow }]}>
@@ -53,10 +55,8 @@ export default function ActivityScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="car-outline" size={56} color={colors.mutedForeground} />
-              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>کوئی سفر نہیں</Text>
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                پہلی سواری مکمل کریں — یہاں نظر آئے گی
-              </Text>
+              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>{t("noTrips")}</Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("noTripsMsg")}</Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -69,7 +69,7 @@ export default function ActivityScreen() {
                 <View style={{ flex: 1, alignItems: "flex-end" }}>
                   <Text style={[styles.date, { color: colors.mutedForeground }]}>{item.date}</Text>
                   <Text style={[styles.driver, { color: colors.foreground }]}>
-                    {item.driverName || item.riderName || "نامعلوم"}
+                    {item.driverName || item.riderName || t("unknown")}
                   </Text>
                 </View>
                 <View style={[styles.iconCircle, { backgroundColor: colors.primary + "15" }]}>

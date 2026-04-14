@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import React from "react";
 import {
   Platform,
@@ -12,8 +13,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 import { RouteConnector } from "@/components/RouteConnector";
 import { useApp } from "@/context/AppContext";
+import { useLang } from "@/context/LanguageContext";
 import { useColors } from "@/hooks/useColors";
 import {
   useListRides,
@@ -21,12 +24,13 @@ import {
   useGetActiveRide,
   useGetRideHistory,
 } from "@workspace/api-client-react";
-import { router } from "expo-router";
 
 export default function DriverHome() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const { user, setActiveRide, activeRide } = useApp();
+  const { t, isUrdu } = useLang();
+  const queryClient = useQueryClient();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -40,7 +44,7 @@ export default function DriverHome() {
   const setOnlineMutation = useSetOnlineStatus();
 
   const { data: activeRideData } = useGetActiveRide({
-    query: { refetchInterval: 5000 },
+    query: { refetchInterval: 5000, enabled: !activeRide },
   });
 
   React.useEffect(() => {
@@ -48,15 +52,15 @@ export default function DriverHome() {
       const r = activeRideData.ride;
       setActiveRide({
         id: r.id,
-        driverName: r.driverName ?? user?.name ?? "ڈرائیور",
+        driverName: r.driverName ?? user?.name ?? "Driver",
         driverRating: r.driverRating ?? user?.rating ?? 4.9,
         carModel: r.carModel ?? "Suzuki Alto",
-        carPlate: "LHR-2024",
+        carPlate: (r as any).carPlate ?? "LHR-2024",
         status: r.status as any,
         pickup: r.pickup,
         dropoff: r.dropoff,
         fare: r.finalFare ?? r.offeredFare,
-        eta: "4 منٹ",
+        eta: isUrdu ? "4 منٹ" : "4 min",
         distance: r.distance,
         duration: r.duration,
         riderId: r.riderId,
@@ -97,13 +101,13 @@ export default function DriverHome() {
               thumbColor="#fff"
             />
             <Text style={[styles.onlineText, { color: user?.isOnline ? colors.primary : colors.mutedForeground }]}>
-              {user?.isOnline ? "آن لائن" : "آف لائن"}
+              {user?.isOnline ? t("onlineStatus") : t("offlineStatus")}
             </Text>
             <View style={[styles.onlineDot, { backgroundColor: user?.isOnline ? colors.primary : colors.mutedForeground }]} />
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={[styles.topLabel, { color: colors.mutedForeground }]}>السلام علیکم،</Text>
-            <Text style={[styles.topName, { color: colors.foreground }]}>{user?.name ?? "ڈرائیور"}</Text>
+            <Text style={[styles.topLabel, { color: colors.mutedForeground }]}>{t("hello")}</Text>
+            <Text style={[styles.topName, { color: colors.foreground }]}>{user?.name ?? "Driver"}</Text>
           </View>
         </View>
 
@@ -115,11 +119,11 @@ export default function DriverHome() {
               end={{ x: 1, y: 0 }}
               style={styles.withdrawBtn}
             >
-              <Text style={styles.withdrawText}>نکالیں</Text>
+              <Text style={styles.withdrawText}>{t("withdraw")}</Text>
             </LinearGradient>
           </TouchableOpacity>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={[styles.earningsLabel, { color: colors.mutedForeground }]}>کل کمائی</Text>
+            <Text style={[styles.earningsLabel, { color: colors.mutedForeground }]}>{t("totalEarnings")}</Text>
             <Text style={[styles.earningsValue, { color: colors.foreground }]}>
               Rs {earnings.toFixed(0)}
             </Text>
@@ -133,8 +137,8 @@ export default function DriverHome() {
             <Ionicons name="refresh" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={[styles.liveLabel, { color: colors.primary }]}>لائیو</Text>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>آنے والی سواریاں</Text>
+            <Text style={[styles.liveLabel, { color: colors.primary }]}>{t("liveBids")}</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{t("incoming")}</Text>
           </View>
         </View>
 
@@ -142,35 +146,35 @@ export default function DriverHome() {
           <View style={styles.empty}>
             <Ionicons name="power" size={48} color={colors.mutedForeground} />
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              سواریاں وصول کرنے کے لیے آن لائن ہوں
+              {t("goOnline")}
             </Text>
           </View>
         ) : incoming.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="car-outline" size={48} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>سواری کا انتظار ہے...</Text>
+            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("waitingRide")}</Text>
           </View>
         ) : (
           incoming.map((req) => (
-            <RequestCard key={req.id} req={req} colors={colors} />
+            <RequestCard key={req.id} req={req} colors={colors} queryClient={queryClient} isUrdu={isUrdu} t={t} />
           ))
         )}
 
-        <Text style={[styles.sectionTitle2, { color: colors.foreground, marginTop: 24, marginBottom: 12 }]}>
-          اعداد و شمار
+        <Text style={[styles.sectionTitle2, { color: colors.foreground, marginTop: 24, marginBottom: 12, textAlign: "right" }]}>
+          {t("stats")}
         </Text>
         <View style={styles.statsRow}>
           <View style={[styles.miniStat, { backgroundColor: colors.card }]}>
             <Text style={[styles.miniStatValue, { color: colors.foreground }]}>{user?.totalRides ?? 0}</Text>
-            <Text style={[styles.miniStatLabel, { color: colors.mutedForeground }]}>سواریاں</Text>
+            <Text style={[styles.miniStatLabel, { color: colors.mutedForeground }]}>{t("rides")}</Text>
           </View>
           <View style={[styles.miniStat, { backgroundColor: colors.card }]}>
             <Text style={[styles.miniStatValue, { color: colors.primary }]}>{user?.rating ?? "5.0"}</Text>
-            <Text style={[styles.miniStatLabel, { color: colors.mutedForeground }]}>ریٹنگ</Text>
+            <Text style={[styles.miniStatLabel, { color: colors.mutedForeground }]}>{t("rating")}</Text>
           </View>
           <View style={[styles.miniStat, { backgroundColor: colors.card }]}>
             <Text style={[styles.miniStatValue, { color: colors.secondary }]}>Rs {earnings.toFixed(0)}</Text>
-            <Text style={[styles.miniStatLabel, { color: colors.mutedForeground }]}>کمائی</Text>
+            <Text style={[styles.miniStatLabel, { color: colors.mutedForeground }]}>{t("earnings")}</Text>
           </View>
         </View>
       </View>
@@ -178,27 +182,30 @@ export default function DriverHome() {
   );
 }
 
-function RequestCard({ req, colors }: { req: any; colors: any }) {
+function RequestCard({ req, colors, queryClient, isUrdu, t }: {
+  req: any; colors: any; queryClient: any; isUrdu: boolean; t: any;
+}) {
   const { setActiveRide } = useApp();
 
   const handleAccept = async () => {
     try {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const bidsModule = await import("@workspace/api-client-react");
-      const bid = await bidsModule.createBid(req.id, { amount: req.offeredFare, eta: "5 منٹ" });
+      const bid = await bidsModule.createBid(req.id, { amount: req.offeredFare, eta: isUrdu ? "5 منٹ" : "5 min" });
       const ride = await bidsModule.acceptBid(req.id, bid.bid.id);
       const r = ride.ride;
+      queryClient.clear();
       setActiveRide({
         id: r.id,
-        driverName: r.driverName ?? "ڈرائیور",
+        driverName: r.driverName ?? "Driver",
         driverRating: r.driverRating ?? 4.9,
         carModel: r.carModel ?? "Suzuki Alto",
-        carPlate: "LHR-2024",
+        carPlate: (r as any).carPlate ?? "LHR-2024",
         status: r.status as any,
         pickup: r.pickup,
         dropoff: r.dropoff,
         fare: r.finalFare ?? r.offeredFare,
-        eta: "4 منٹ",
+        eta: isUrdu ? "4 منٹ" : "4 min",
         distance: r.distance,
         duration: r.duration,
         riderId: r.riderId,
@@ -215,7 +222,9 @@ function RequestCard({ req, colors }: { req: any; colors: any }) {
       <View style={styles.cardHeader}>
         <View>
           <Text style={[styles.fareAmt, { color: colors.primary }]}>Rs {req.offeredFare.toFixed(0)}</Text>
-          <Text style={[styles.fareLabel, { color: colors.mutedForeground }]}>مسافر کا کرایہ</Text>
+          <Text style={[styles.fareLabel, { color: colors.mutedForeground }]}>
+            {isUrdu ? "مسافر کا کرایہ" : "Rider's Fare"}
+          </Text>
         </View>
         <View style={styles.riderRow}>
           <View>
@@ -258,14 +267,14 @@ function RequestCard({ req, colors }: { req: any; colors: any }) {
             end={{ x: 1, y: 0 }}
             style={styles.acceptBtn}
           >
-            <Text style={styles.acceptText}>قبول کریں</Text>
+            <Text style={styles.acceptText}>{isUrdu ? "قبول کریں" : "Accept"}</Text>
           </LinearGradient>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.declineBtn, { backgroundColor: colors.surfaceContainerHigh }]}
           activeOpacity={0.8}
         >
-          <Text style={[styles.declineText, { color: colors.foreground }]}>رد کریں</Text>
+          <Text style={[styles.declineText, { color: colors.foreground }]}>{isUrdu ? "رد کریں" : "Decline"}</Text>
         </TouchableOpacity>
       </View>
     </View>
