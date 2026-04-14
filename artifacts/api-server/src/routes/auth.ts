@@ -52,18 +52,24 @@ router.post("/send-otp", async (req, res) => {
   });
 
   let smsSent = false;
+  let smsError: string | null = null;
   try {
     await sendSmsOtp(normalizedPhone, code);
     smsSent = true;
-  } catch (e) {
+  } catch (e: any) {
     console.error("SMS send failed:", e);
+    // Twilio error 21608 = unverified number (trial account)
+    // Always include devCode so the app still works
+    smsError = e?.code ? `Twilio error ${e.code}` : "SMS failed";
   }
 
   const configured = await isTwilioConfigured();
 
   res.json({
-    message: "OTP sent successfully",
-    ...(configured && smsSent ? {} : { devCode: code }),
+    message: smsSent ? "OTP sent via SMS" : "OTP generated (SMS unavailable)",
+    // Always return devCode if SMS wasn't delivered so app stays functional
+    ...(!smsSent ? { devCode: code } : {}),
+    ...(smsError ? { smsNote: smsError } : {}),
   });
 });
 

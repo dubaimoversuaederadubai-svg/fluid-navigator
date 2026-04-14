@@ -55,12 +55,14 @@ export default function AuthScreen() {
       setOtp(["", "", "", ""]);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setScreen("otp");
-      if (__DEV__ && resp.devCode) {
+      // Auto-fill OTP if server returns devCode (SMS not delivered)
+      if (resp.devCode) {
         setTimeout(() => setOtp(resp.devCode!.split("")), 300);
       }
     } catch (err: any) {
       const msg = err?.data?.error || err?.message || t("otpSendError");
       Alert.alert(t("error"), msg);
+      return;
     }
   };
 

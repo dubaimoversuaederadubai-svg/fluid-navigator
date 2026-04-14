@@ -2,13 +2,26 @@ import twilio from "twilio";
 
 let _cachedSettings: {
   accountSid: string;
-  apiKey: string;
-  apiKeySecret: string;
+  authToken: string;
   phoneNumber: string;
 } | null = null;
 
 async function getCredentials() {
   if (_cachedSettings) return _cachedSettings;
+
+  if (
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    process.env.TWILIO_PHONE_NUMBER
+  ) {
+    _cachedSettings = {
+      accountSid: process.env.TWILIO_ACCOUNT_SID,
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+      phoneNumber: process.env.TWILIO_PHONE_NUMBER,
+    };
+    console.log("[Twilio] Using env ACCOUNT_SID + AUTH_TOKEN");
+    return _cachedSettings;
+  }
 
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
@@ -31,36 +44,18 @@ async function getCredentials() {
         .then((r) => r.json())
         .then((d: any) => d.items?.[0]);
 
-      if (
-        data?.settings?.account_sid &&
-        data?.settings?.api_key &&
-        data?.settings?.api_key_secret
-      ) {
+      if (data?.settings?.account_sid) {
         _cachedSettings = {
           accountSid: data.settings.account_sid,
-          apiKey: data.settings.api_key,
-          apiKeySecret: data.settings.api_key_secret,
+          authToken: data.settings.auth_token || data.settings.api_key,
           phoneNumber: data.settings.phone_number || "",
         };
+        console.log("[Twilio] Using Replit connector credentials");
         return _cachedSettings;
       }
     } catch (e) {
       console.warn("[Twilio] Replit connector fetch failed:", e);
     }
-  }
-
-  if (
-    process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    process.env.TWILIO_PHONE_NUMBER
-  ) {
-    _cachedSettings = {
-      accountSid: process.env.TWILIO_ACCOUNT_SID,
-      apiKey: process.env.TWILIO_ACCOUNT_SID,
-      apiKeySecret: process.env.TWILIO_AUTH_TOKEN,
-      phoneNumber: process.env.TWILIO_PHONE_NUMBER,
-    };
-    return _cachedSettings;
   }
 
   return null;
@@ -69,7 +64,7 @@ async function getCredentials() {
 export async function getTwilioClient() {
   const creds = await getCredentials();
   if (!creds) return null;
-  return twilio(creds.apiKey, creds.apiKeySecret, { accountSid: creds.accountSid });
+  return twilio(creds.accountSid, creds.authToken);
 }
 
 export async function getTwilioFromNumber() {
