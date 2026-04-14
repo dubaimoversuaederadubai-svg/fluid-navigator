@@ -3,42 +3,35 @@ import { db, otpsTable, usersTable, sessionsTable } from "@workspace/db";
 import { eq, and, gt } from "drizzle-orm";
 import { generateId, generateToken } from "../lib/auth.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
+import { getTwilioClient, getTwilioFromNumber, isTwilioConfigured } from "../lib/twilio.js";
 
 const router = Router();
 
 async function sendSmsOtp(phone: string, code: string): Promise<void> {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+  const configured = await isTwilioConfigured();
 
-  if (!accountSid || !authToken || !fromNumber) {
+  if (!configured) {
     console.log(`[DEV] OTP for +${phone}: ${code}`);
     return;
   }
 
-  const body = `آپ کا Fluid Navigator تصدیقی کوڈ ہے: ${code}\nیہ کوڈ 10 منٹ میں ختم ہو جائے گا۔`;
+  const client = await getTwilioClient();
+  const fromNumber = await getTwilioFromNumber();
 
-  const response = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64"),
-      },
-      body: new URLSearchParams({
-        From: fromNumber,
-        To: `+${phone}`,
-        Body: body,
-      }).toString(),
-    }
-  );
-
-  if (!response.ok) {
-    const err = await response.text();
-    console.error("Twilio error:", err);
-    throw new Error("SMS delivery failed");
+  if (!client || !fromNumber) {
+    console.log(`[DEV] Twilio client unavailable. OTP for +${phone}: ${code}`);
+    return;
   }
+
+  const body = `Fluid Navigator verification code: ${code}\nValid for 10 minutes.\n\nTصدیقی کوڈ: ${code}`;
+
+  await client.messages.create({
+    from: fromNumber,
+    to: `+${phone}`,
+    body,
+  });
+
+  console.log(`[Twilio] SMS sent to +${phone}`);
 }
 
 router.post("/send-otp", async (req, res) => {
@@ -48,7 +41,7 @@ router.post("/send-otp", async (req, res) => {
     return;
   }
   const normalizedPhone = phone.replace(/\s+/g, "").replace(/^\+/, "");
-  const code = Math.floor(1000 + Math.random() * 9000).toString();
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   await db.insert(otpsTable).values({
@@ -58,21 +51,19 @@ router.post("/send-otp", async (req, res) => {
     expiresAt,
   });
 
+  let smsSent = false;
   try {
     await sendSmsOtp(normalizedPhone, code);
+    smsSent = true;
   } catch (e) {
     console.error("SMS send failed:", e);
   }
 
-  const isTwilioConfigured = !!(
-    process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    process.env.TWILIO_PHONE_NUMBER
-  );
+  const configured = await isTwilioConfigured();
 
   res.json({
     message: "OTP sent successfully",
-    ...(isTwilioConfigured ? {} : { devCode: code }),
+    ...(configured && smsSent ? {} : { devCode: code }),
   });
 });
 
