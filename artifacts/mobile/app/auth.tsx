@@ -41,6 +41,8 @@ export default function AuthScreen() {
   const verifyOtpMutation = useVerifyOtp();
   const registerMutation = useRegisterUser();
 
+  const isRtl = lang === "ur";
+
   const handlePhoneContinue = async () => {
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 9) {
@@ -56,8 +58,9 @@ export default function AuthScreen() {
       if (__DEV__ && resp.devCode) {
         setTimeout(() => setOtp(resp.devCode!.split("")), 300);
       }
-    } catch {
-      Alert.alert(t("error"), t("otpSendError"));
+    } catch (err: any) {
+      const msg = err?.data?.error || err?.message || t("otpSendError");
+      Alert.alert(t("error"), msg);
     }
   };
 
@@ -171,7 +174,7 @@ export default function AuthScreen() {
             <Text style={styles.brandName}>Fluid Navigator</Text>
           </View>
         </View>
-        <Text style={styles.brandTagline}>{t("appTagline")}</Text>
+        <Text style={[styles.brandTagline, { textAlign: isRtl ? "right" : "left" }]}>{t("appTagline")}</Text>
       </View>
 
       <KeyboardAvoidingView
@@ -193,6 +196,7 @@ export default function AuthScreen() {
               onContinue={handlePhoneContinue}
               loading={sendOtpMutation.isPending}
               colors={colors}
+              isRtl={isRtl}
             />
           )}
           {screen === "otp" && (
@@ -207,6 +211,7 @@ export default function AuthScreen() {
               loading={verifyOtpMutation.isPending}
               onResend={handlePhoneContinue}
               colors={colors}
+              isRtl={isRtl}
             />
           )}
           {screen === "role" && (
@@ -214,6 +219,7 @@ export default function AuthScreen() {
               onSelect={handleSelectRole}
               loading={registerMutation.isPending}
               colors={colors}
+              isRtl={isRtl}
             />
           )}
         </ScrollView>
@@ -222,22 +228,23 @@ export default function AuthScreen() {
   );
 }
 
-function PhoneScreen({ phone, setPhone, onContinue, loading, colors }: any) {
+function PhoneScreen({ phone, setPhone, onContinue, loading, colors, isRtl }: any) {
   const { t } = useLang();
+  const align = isRtl ? "right" : "left";
   return (
     <View style={styles.formSection}>
-      <Text style={[styles.screenTitle, { color: colors.foreground }]}>{t("welcome")}</Text>
-      <Text style={[styles.screenSub, { color: colors.mutedForeground }]}>{t("enterPhone")}</Text>
+      <Text style={[styles.screenTitle, { color: colors.foreground, textAlign: align }]}>{t("welcome")}</Text>
+      <Text style={[styles.screenSub, { color: colors.mutedForeground, textAlign: align }]}>{t("enterPhone")}</Text>
 
       <View style={{ gap: 8, marginTop: 32 }}>
-        <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>{t("mobileNumber")}</Text>
-        <View style={styles.phoneRow}>
+        <Text style={[styles.inputLabel, { color: colors.mutedForeground, textAlign: align }]}>{t("mobileNumber")}</Text>
+        <View style={[styles.phoneRow, { flexDirection: isRtl ? "row-reverse" : "row" }]}>
           <View style={[styles.countryCode, { backgroundColor: colors.surfaceContainerHighest }]}>
             <Text style={{ fontSize: 18 }}>🇵🇰</Text>
             <Text style={[styles.countryCodeText, { color: colors.foreground }]}>+92</Text>
           </View>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.surfaceContainerHighest, color: colors.foreground }]}
+            style={[styles.input, { backgroundColor: colors.surfaceContainerHighest, color: colors.foreground, textAlign: isRtl ? "right" : "left" }]}
             value={phone}
             onChangeText={setPhone}
             keyboardType="phone-pad"
@@ -248,9 +255,9 @@ function PhoneScreen({ phone, setPhone, onContinue, loading, colors }: any) {
         </View>
       </View>
 
-      <View style={[styles.infoBadge, { backgroundColor: colors.primary + "15" }]}>
+      <View style={[styles.infoBadge, { backgroundColor: colors.primary + "15", flexDirection: isRtl ? "row-reverse" : "row" }]}>
         <Ionicons name="shield-checkmark" size={14} color={colors.primary} />
-        <Text style={[styles.infoText, { color: colors.primary }]}>{t("phoneSecurity")}</Text>
+        <Text style={[styles.infoText, { color: colors.primary, textAlign: align }]}>{t("phoneSecurity")}</Text>
       </View>
 
       <TouchableOpacity onPress={onContinue} disabled={loading} activeOpacity={0.85} style={{ marginTop: 20 }}>
@@ -274,13 +281,14 @@ function PhoneScreen({ phone, setPhone, onContinue, loading, colors }: any) {
   );
 }
 
-function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify, loading, onResend, colors }: any) {
+function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify, loading, onResend, colors, isRtl }: any) {
   const { t } = useLang();
+  const align = isRtl ? "right" : "left";
   const maskedPhone = "0" + phone.replace(/^0/, "").slice(0, 3) + "xxxxxxx";
   return (
     <View style={styles.formSection}>
-      <TouchableOpacity onPress={onBack} style={styles.backRow}>
-        <Ionicons name="arrow-back" size={22} color={colors.mutedForeground} />
+      <TouchableOpacity onPress={onBack} style={[styles.backRow, { flexDirection: isRtl ? "row-reverse" : "row" }]}>
+        <Ionicons name={isRtl ? "arrow-forward" : "arrow-back"} size={22} color={colors.mutedForeground} />
         <Text style={[styles.backText, { color: colors.mutedForeground }]}>{t("back")}</Text>
       </TouchableOpacity>
 
@@ -288,8 +296,8 @@ function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify
         <Ionicons name="chatbubble-ellipses" size={32} color={colors.primary} />
       </View>
 
-      <Text style={[styles.screenTitle, { color: colors.foreground }]}>{t("otpSent")}</Text>
-      <Text style={[styles.screenSub, { color: colors.mutedForeground }]}>
+      <Text style={[styles.screenTitle, { color: colors.foreground, textAlign: align }]}>{t("otpSent")}</Text>
+      <Text style={[styles.screenSub, { color: colors.mutedForeground, textAlign: align }]}>
         {t("otpSentMsg")}{" "}
         <Text style={{ color: colors.foreground, fontFamily: "Inter_700Bold" }}>
           +92 {maskedPhone}
@@ -355,23 +363,24 @@ function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify
   );
 }
 
-function RoleScreen({ onSelect, loading, colors }: any) {
+function RoleScreen({ onSelect, loading, colors, isRtl }: any) {
   const { t } = useLang();
+  const align = isRtl ? "right" : "left";
   const [name, setName] = useState("");
   const [selectedRole, setSelectedRole] = useState<"rider" | "driver" | null>(null);
 
   return (
     <View style={styles.formSection}>
-      <View style={[styles.successBadge, { backgroundColor: colors.primary + "15" }]}>
+      <View style={[styles.successBadge, { backgroundColor: colors.primary + "15", alignSelf: isRtl ? "flex-end" : "flex-start" }]}>
         <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
         <Text style={[styles.successBadgeText, { color: colors.primary }]}>{t("numberVerified")}</Text>
       </View>
 
-      <Text style={[styles.screenTitle, { color: colors.foreground }]}>{t("createProfile")}</Text>
-      <Text style={[styles.screenSub, { color: colors.mutedForeground }]}>{t("profileSub")}</Text>
+      <Text style={[styles.screenTitle, { color: colors.foreground, textAlign: align }]}>{t("createProfile")}</Text>
+      <Text style={[styles.screenSub, { color: colors.mutedForeground, textAlign: align }]}>{t("profileSub")}</Text>
 
       <View style={{ gap: 8, marginTop: 24, marginBottom: 8 }}>
-        <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>{t("yourName")}</Text>
+        <Text style={[styles.inputLabel, { color: colors.mutedForeground, textAlign: align }]}>{t("yourName")}</Text>
         <TextInput
           style={[
             styles.nameInput,
@@ -379,6 +388,7 @@ function RoleScreen({ onSelect, loading, colors }: any) {
               backgroundColor: colors.surfaceContainerHighest,
               color: colors.foreground,
               borderColor: name ? colors.primary : "transparent",
+              textAlign: isRtl ? "right" : "left",
             },
           ]}
           value={name}
@@ -389,7 +399,7 @@ function RoleScreen({ onSelect, loading, colors }: any) {
         />
       </View>
 
-      <Text style={[styles.inputLabel, { color: colors.mutedForeground, marginBottom: 10, marginTop: 8 }]}>
+      <Text style={[styles.inputLabel, { color: colors.mutedForeground, marginBottom: 10, marginTop: 8, textAlign: align }]}>
         {t("iAm")}
       </Text>
 
@@ -400,27 +410,27 @@ function RoleScreen({ onSelect, loading, colors }: any) {
               colors={["#10B981", "#059669"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              style={styles.roleCard}
+              style={[styles.roleCard, { flexDirection: isRtl ? "row-reverse" : "row" }]}
             >
               <View style={styles.roleIconCircle}>
                 <Ionicons name="person" size={24} color="#10B981" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.roleCardTitleSelected}>{t("rider")}</Text>
-                <Text style={styles.roleCardSubSelected}>{t("riderSub")}</Text>
+                <Text style={[styles.roleCardTitleSelected, { textAlign: align }]}>{t("rider")}</Text>
+                <Text style={[styles.roleCardSubSelected, { textAlign: align }]}>{t("riderSub")}</Text>
               </View>
               <View style={styles.roleCheck}>
                 <Ionicons name="checkmark" size={16} color="#10B981" />
               </View>
             </LinearGradient>
           ) : (
-            <View style={[styles.roleCard, { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.border }]}>
+            <View style={[styles.roleCard, { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.border, flexDirection: isRtl ? "row-reverse" : "row" }]}>
               <View style={[styles.roleIconCircle, { backgroundColor: colors.primary + "15" }]}>
                 <Ionicons name="person" size={24} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.roleCardTitle, { color: colors.foreground }]}>{t("rider")}</Text>
-                <Text style={[styles.roleCardSub, { color: colors.mutedForeground }]}>{t("riderSub")}</Text>
+                <Text style={[styles.roleCardTitle, { color: colors.foreground, textAlign: align }]}>{t("rider")}</Text>
+                <Text style={[styles.roleCardSub, { color: colors.mutedForeground, textAlign: align }]}>{t("riderSub")}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.border} />
             </View>
@@ -433,27 +443,27 @@ function RoleScreen({ onSelect, loading, colors }: any) {
               colors={["#2170E4", "#1a5cc4"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              style={styles.roleCard}
+              style={[styles.roleCard, { flexDirection: isRtl ? "row-reverse" : "row" }]}
             >
               <View style={styles.roleIconCircle}>
                 <Ionicons name="car-sport" size={24} color="#2170E4" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.roleCardTitleSelected}>{t("driver")}</Text>
-                <Text style={styles.roleCardSubSelected}>{t("driverSub")}</Text>
+                <Text style={[styles.roleCardTitleSelected, { textAlign: align }]}>{t("driver")}</Text>
+                <Text style={[styles.roleCardSubSelected, { textAlign: align }]}>{t("driverSub")}</Text>
               </View>
               <View style={styles.roleCheck}>
                 <Ionicons name="checkmark" size={16} color="#2170E4" />
               </View>
             </LinearGradient>
           ) : (
-            <View style={[styles.roleCard, { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.border }]}>
+            <View style={[styles.roleCard, { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.border, flexDirection: isRtl ? "row-reverse" : "row" }]}>
               <View style={[styles.roleIconCircle, { backgroundColor: colors.secondary + "15" }]}>
                 <Ionicons name="car-sport" size={24} color={colors.secondary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.roleCardTitle, { color: colors.foreground }]}>{t("driver")}</Text>
-                <Text style={[styles.roleCardSub, { color: colors.mutedForeground }]}>{t("driverSub")}</Text>
+                <Text style={[styles.roleCardTitle, { color: colors.foreground, textAlign: align }]}>{t("driver")}</Text>
+                <Text style={[styles.roleCardSub, { color: colors.mutedForeground, textAlign: align }]}>{t("driverSub")}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.border} />
             </View>
@@ -505,7 +515,6 @@ const styles = StyleSheet.create({
   brandTagline: {
     fontSize: 15, color: "rgba(255,255,255,0.85)",
     fontFamily: "Inter_400Regular", lineHeight: 22,
-    textAlign: "right",
   },
   card: {
     flex: 1,
@@ -519,28 +528,28 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   formSection: { gap: 0 },
-  backRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 20 },
+  backRow: { alignItems: "center", gap: 6, marginBottom: 20 },
   backText: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  screenTitle: { fontSize: 30, fontFamily: "Inter_700Bold", letterSpacing: -0.8, marginBottom: 6, textAlign: "right" },
-  screenSub: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 21, textAlign: "right" },
-  inputLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.8, textTransform: "uppercase", textAlign: "right" },
-  phoneRow: { flexDirection: "row", gap: 10 },
+  screenTitle: { fontSize: 30, fontFamily: "Inter_700Bold", letterSpacing: -0.8, marginBottom: 6 },
+  screenSub: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 21 },
+  inputLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.8, textTransform: "uppercase" },
+  phoneRow: { gap: 10 },
   countryCode: {
     height: 56, paddingHorizontal: 14, borderRadius: 16,
     flexDirection: "row", alignItems: "center", gap: 6,
   },
   countryCodeText: { fontSize: 15, fontFamily: "Inter_700Bold" },
-  input: { flex: 1, height: 56, borderRadius: 16, paddingHorizontal: 16, fontSize: 18, fontFamily: "Inter_500Medium", textAlign: "right" },
+  input: { flex: 1, height: 56, borderRadius: 16, paddingHorizontal: 16, fontSize: 18, fontFamily: "Inter_500Medium" },
   nameInput: {
     height: 56, borderRadius: 16, paddingHorizontal: 16,
     fontSize: 16, fontFamily: "Inter_500Medium",
-    textAlign: "right", borderWidth: 2,
+    borderWidth: 2,
   },
   infoBadge: {
-    flexDirection: "row", alignItems: "center", gap: 8,
+    alignItems: "center", gap: 8,
     borderRadius: 12, padding: 12, marginTop: 12,
   },
-  infoText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17, textAlign: "right" },
+  infoText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
   mainBtn: { height: 56, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   mainBtnText: { color: "#fff", fontSize: 17, fontFamily: "Inter_700Bold" },
   otpIconWrap: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 16 },
@@ -553,17 +562,17 @@ const styles = StyleSheet.create({
   successBadge: {
     flexDirection: "row", alignItems: "center", gap: 8,
     borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
-    alignSelf: "flex-end", marginBottom: 16,
+    marginBottom: 16,
   },
   successBadgeText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   roleCard: {
     padding: 16, borderRadius: 18,
-    flexDirection: "row", alignItems: "center", gap: 14,
+    alignItems: "center", gap: 14,
   },
   roleIconCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  roleCardTitle: { fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 2, textAlign: "right" },
-  roleCardTitleSelected: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 2, textAlign: "right" },
-  roleCardSub: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17, textAlign: "right" },
-  roleCardSubSelected: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17, textAlign: "right" },
+  roleCardTitle: { fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 2 },
+  roleCardTitleSelected: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 2 },
+  roleCardSub: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
+  roleCardSubSelected: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
   roleCheck: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
 });
