@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -11,7 +11,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -21,7 +20,8 @@ import { useGetActiveRide } from "@workspace/api-client-react";
 import { useApp } from "@/context/AppContext";
 import { useLang } from "@/context/LanguageContext";
 import { useColors } from "@/hooks/useColors";
-import LeafletMap, { MapMessage } from "@/components/LeafletMap";
+import LeafletMap, { MapMessage, LeafletMapRef } from "@/components/LeafletMap";
+import { LocationAutocompleteInput } from "@/components/LocationAutocompleteInput";
 import { VEHICLE_CONFIG, VehicleType, calculateFare, formatDistance, formatDuration } from "@/utils/fareCalc";
 
 const { height } = Dimensions.get("window");
@@ -36,15 +36,17 @@ export default function RiderHome() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const [pickup, setPickup] = useState(isUrdu ? "گلبرگ، لاہور" : "Gulberg, Lahore");
+  const [pickup, setPickup] = useState("");
   const [dropoff, setDropoff] = useState("");
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
   const [distanceKm, setDistanceKm] = useState<number>(0);
   const [durationMin, setDurationMin] = useState<number>(0);
   const [locating, setLocating] = useState(false);
-  const [mapKey, setMapKey] = useState(0);
+  const [userLat, setUserLat] = useState<number | undefined>(undefined);
+  const [userLng, setUserLng] = useState<number | undefined>(undefined);
   const [pickupLatLng, setPickupLatLng] = useState<{ lat: number; lng: number } | null>(null);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<LeafletMapRef>(null);
+  const gpsAttemptedRef = useRef(false);
 
   const { data: activeRideData } = useGetActiveRide({
     query: {
@@ -76,6 +78,13 @@ export default function RiderHome() {
     }
   }, [activeRideData?.ride]);
 
+  useEffect(() => {
+    if (!gpsAttemptedRef.current) {
+      gpsAttemptedRef.current = true;
+      getMyLocation();
+    }
+  }, []);
+
   if (activeRide) {
     router.replace("/ride-tracking");
     return null;
@@ -92,6 +101,9 @@ export default function RiderHome() {
     if (msg.type === "dropoff_set" && msg.address) {
       setDropoff(msg.address);
     }
+    if (msg.type === "pickup_geocoded" && msg.lat && msg.lng) {
+      setPickupLatLng({ lat: msg.lat, lng: msg.lng });
+    }
   }, []);
 
   const getMyLocation = async () => {
@@ -100,24 +112,45 @@ export default function RiderHome() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         setLocating(false);
+        if (!pickup) setPickup(isUrdu ? "گلبرگ، لاہور" : "Gulberg, Lahore");
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 5000,
+      });
       const { latitude, longitude } = loc.coords;
+      setUserLat(latitude);
+      setUserLng(longitude);
       setPickupLatLng({ lat: latitude, lng: longitude });
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=16`,
-        { headers: { "Accept-Language": "ur" } }
-      );
-      const data = await resp.json();
-      if (data?.display_name) {
-        const parts = data.display_name.split(",");
-        const short = parts.slice(0, 2).join(",").trim();
-        setPickup(short);
-        setMapKey((k) => k + 1);
-      }
-    } catch {}
+      mapRef.current?.sendCommand({ action: "set_user", lat: latitude, lng: longitude });
+      try {
+        const resp = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=16`,
+          { headers: { "Accept-Language": "ur" } }
+        );
+        const data = await resp.json();
+        if (data?.display_name) {
+          const parts = data.display_name.split(",");
+          const short = parts.slice(0, 2).join(",").trim();
+          setPickup(short);
+        }
+      } catch {}
+    } catch {
+      if (!pickup) setPickup(isUrdu ? "گلبرگ، لاہور" : "Gulberg, Lahore");
+    }
     setLocating(false);
+  };
+
+  const handlePickupSelect = (address: string, lat: number, lng: number) => {
+    setPickup(address);
+    setPickupLatLng({ lat, lng });
+    mapRef.current?.sendCommand({ action: "set_pickup_coords", lat, lng });
+  };
+
+  const handleDropoffSelect = (address: string, lat: number, lng: number) => {
+    setDropoff(address);
+    mapRef.current?.sendCommand({ action: "set_dropoff_coords", lat, lng });
   };
 
   const calculatedFare = distanceKm > 0 ? calculateFare(distanceKm, vehicleType) : null;
@@ -129,8 +162,8 @@ export default function RiderHome() {
     router.push({
       pathname: "/fare-negotiation",
       params: {
-        pickup,
-        dropoff: dropoff || (isUrdu ? "منزل منتخب کریں" : "Select Destination"),
+        pickup: pickup || (isUrdu ? "موجودہ جگہ" : "Current Location"),
+        dropoff,
         vehicleType,
         distanceKm: distanceKm.toString(),
         durationMin: durationMin.toString(),
@@ -145,13 +178,15 @@ export default function RiderHome() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <View style={styles.mapContainer}>
         <LeafletMap
-          key={mapKey}
-          pickupAddress={pickup}
+          ref={mapRef}
+          pickupAddress={pickup || undefined}
           dropoffAddress={dropoff || undefined}
           mode="picker"
           vehicleType={vehicleType}
           onMessage={handleMapMessage}
           style={{ flex: 1 }}
+          userLat={userLat}
+          userLng={userLng}
         />
 
         <View style={[styles.headerBar, { top: topPad + 8 }]}>
@@ -167,43 +202,53 @@ export default function RiderHome() {
         </View>
 
         <View style={[styles.searchCard, { top: topPad + 66, backgroundColor: colors.card }]}>
-          <View style={[styles.searchRow, { backgroundColor: colors.surfaceContainerHighest }]}>
-            <Ionicons name="navigate-circle" size={18} color={colors.primary} />
-            <TextInput
-              style={[styles.searchInput, { color: colors.foreground, textAlign: isUrdu ? "right" : "left" }]}
-              value={pickup}
-              onChangeText={setPickup}
-              onEndEditing={() => setMapKey((k) => k + 1)}
-              placeholder={isUrdu ? "کہاں سے؟" : "Pickup location"}
-              placeholderTextColor={colors.mutedForeground}
-            />
-            <TouchableOpacity onPress={getMyLocation} disabled={locating}>
-              {locating
-                ? <ActivityIndicator size="small" color={colors.primary} />
-                : <Ionicons name="locate" size={16} color={colors.primary} />}
-            </TouchableOpacity>
-          </View>
+          <LocationAutocompleteInput
+            value={pickup}
+            onChangeText={setPickup}
+            onSelectSuggestion={handlePickupSelect}
+            placeholder={isUrdu ? "کہاں سے؟" : "Pickup location"}
+            colors={colors}
+            iconName="navigate-circle"
+            iconColor={colors.primary}
+            isUrdu={isUrdu}
+            rightElement={
+              <TouchableOpacity onPress={getMyLocation} disabled={locating}>
+                {locating
+                  ? <ActivityIndicator size="small" color={colors.primary} />
+                  : <Ionicons name="locate" size={16} color={colors.primary} />}
+              </TouchableOpacity>
+            }
+          />
           <View style={[styles.routeDot, { backgroundColor: colors.border }]} />
-          <View style={[styles.searchRow, { backgroundColor: colors.surfaceContainerHighest }]}>
-            <Ionicons name="location" size={18} color="#EF4444" />
-            <TextInput
-              style={[styles.searchInput, { color: colors.foreground, textAlign: isUrdu ? "right" : "left" }]}
-              value={dropoff}
-              onChangeText={setDropoff}
-              onEndEditing={() => { if (dropoff) setMapKey((k) => k + 1); }}
-              placeholder={isUrdu ? "کہاں جانا ہے؟ نقشے پر ٹیپ کریں" : "Destination? Tap map to set"}
-              placeholderTextColor={colors.mutedForeground}
-            />
-          </View>
+          <LocationAutocompleteInput
+            value={dropoff}
+            onChangeText={setDropoff}
+            onSelectSuggestion={handleDropoffSelect}
+            placeholder={isUrdu ? "کہاں جانا ہے؟" : "Where to?"}
+            colors={colors}
+            iconName="location"
+            iconColor="#EF4444"
+            isUrdu={isUrdu}
+          />
         </View>
 
         <View style={[styles.mapHint, { bottom: 8 }]}>
-          <View style={[styles.hintPill, { backgroundColor: colors.card + "EE" }]}>
-            <Ionicons name="hand-left-outline" size={13} color={colors.mutedForeground} />
-            <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
-              {isUrdu ? "نقشے پر ٹیپ کریں — پہلے شروع، پھر منزل" : "Tap map — first pickup, then dropoff"}
-            </Text>
-          </View>
+          {!userLat && !locating && (
+            <View style={[styles.hintPill, { backgroundColor: colors.card + "EE" }]}>
+              <Ionicons name="locate-outline" size={13} color={colors.mutedForeground} />
+              <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
+                {isUrdu ? "GPS کے لیے لوکیٹ بٹن دبائیں" : "Tap locate for GPS • or tap map to set location"}
+              </Text>
+            </View>
+          )}
+          {userLat && (
+            <View style={[styles.hintPill, { backgroundColor: "#10B981" + "20" }]}>
+              <Ionicons name="checkmark-circle" size={13} color="#10B981" />
+              <Text style={[styles.hintText, { color: "#10B981" }]}>
+                {isUrdu ? "GPS سے جگہ مل گئی" : "Location found via GPS"}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -213,6 +258,7 @@ export default function RiderHome() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.sheetScroll}
+          keyboardShouldPersistTaps="handled"
         >
           {distanceKm > 0 && (
             <View style={[styles.distanceBanner, { backgroundColor: colors.primary + "12" }]}>
@@ -306,10 +352,9 @@ const styles = StyleSheet.create({
   avatarLetter: { color: "#fff", fontSize: 13, fontFamily: "Inter_700Bold" },
   searchCard: {
     position: "absolute", left: 12, right: 12, borderRadius: 18, padding: 10, gap: 0,
-    shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, elevation: 5, zIndex: 10,
+    shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, elevation: 20, zIndex: 20,
+    overflow: "visible",
   },
-  searchRow: { flexDirection: "row", alignItems: "center", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-  searchInput: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular" },
   routeDot: { width: 2, height: 10, borderRadius: 1, alignSelf: "center", marginLeft: 20, marginVertical: 2 },
   mapHint: { position: "absolute", left: 0, right: 0, alignItems: "center", zIndex: 5 },
   hintPill: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
