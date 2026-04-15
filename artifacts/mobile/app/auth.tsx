@@ -36,6 +36,7 @@ export default function AuthScreen() {
   const [pendingToken, setPendingToken] = useState<string>("");
   const [pendingUser, setPendingUser] = useState<any>(null);
   const otpRefs = useRef<(TextInput | null)[]>([]);
+  const isVerifyingRef = useRef(false);
 
   const sendOtpMutation = useSendOtp();
   const verifyOtpMutation = useVerifyOtp();
@@ -55,22 +56,27 @@ export default function AuthScreen() {
       setOtp(["", "", "", ""]);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setScreen("otp");
-      // Auto-fill OTP if server returns devCode (SMS not delivered)
       if (resp.devCode) {
-        setTimeout(() => setOtp(resp.devCode!.split("")), 300);
+        const code = resp.devCode;
+        setTimeout(() => {
+          setOtp(code.split(""));
+          setTimeout(() => {
+            if (!isVerifyingRef.current) handleVerify(code);
+          }, 400);
+        }, 500);
       }
     } catch (err: any) {
       const rawMsg: string = err?.data?.error || err?.message || "";
       const isNetErr = rawMsg.toLowerCase().includes("network") || rawMsg.toLowerCase().includes("failed to fetch");
       const msg = isNetErr
-        ? (isRtl ? "سرور سے رابطہ نہ ہو سکا۔ انٹرنیٹ چیک کریں۔" : "Cannot reach server. Check internet connection.")
+        ? (isRtl ? "سرور سے رابطہ نہ ہو سکا۔ انٹرنیٹ چیک کریں۔" : "Cannot reach server. Check internet.")
         : rawMsg || t("otpSendError");
       Alert.alert(t("error"), msg);
-      return;
     }
   };
 
   const handleOtpChange = (val: string, idx: number) => {
+    if (isVerifyingRef.current) return;
     const newOtp = [...otp];
     newOtp[idx] = val.replace(/\D/g, "").slice(-1);
     setOtp(newOtp);
@@ -87,17 +93,18 @@ export default function AuthScreen() {
   };
 
   const handleVerify = async (codeOverride?: string) => {
+    if (isVerifyingRef.current) return;
     const code = codeOverride ?? otp.join("");
     if (code.length < 4) {
       Alert.alert(t("enterCode"), t("enterCodeMsg"));
       return;
     }
+    isVerifyingRef.current = true;
     try {
       const digits = phone.replace(/\D/g, "");
       const fullPhone = "92" + digits.replace(/^0/, "");
       const resp = await verifyOtpMutation.mutateAsync({ data: { phone: fullPhone, code } });
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await AsyncStorage.setItem("fluid_token", resp.token);
       setPendingToken(resp.token);
       setPendingUser(resp.user);
       if (!resp.isNewUser && resp.user.name) {
@@ -115,11 +122,20 @@ export default function AuthScreen() {
       } else {
         setScreen("role");
       }
-    } catch {
+    } catch (err: any) {
       setOtp(["", "", "", ""]);
-      otpRefs.current[0]?.focus();
-      Alert.alert(t("codeInvalid"), t("codeInvalidMsg"));
+      setTimeout(() => otpRefs.current[0]?.focus(), 100);
+      const rawMsg: string = err?.data?.error || err?.message || "";
+      const isNetErr = rawMsg.toLowerCase().includes("network") || rawMsg.toLowerCase().includes("failed");
+      const isInvalid = err?.status === 400 || rawMsg.toLowerCase().includes("invalid") || rawMsg.toLowerCase().includes("expired");
+      const msg = isNetErr
+        ? (isRtl ? "انٹرنیٹ کنیکشن چیک کریں" : "Check your internet connection")
+        : isInvalid
+        ? (isRtl ? "کوڈ غلط ہے یا میعاد ختم ہو گئی۔ دوبارہ بھیجیں" : "Code is wrong or expired. Please resend.")
+        : t("codeInvalidMsg");
+      Alert.alert(t("codeInvalid"), msg);
     }
+    isVerifyingRef.current = false;
   };
 
   const handleSelectRole = async (name: string, role: "rider" | "driver") => {
@@ -127,7 +143,13 @@ export default function AuthScreen() {
       Alert.alert(t("nameRequired"), t("nameRequiredMsg"));
       return;
     }
+    if (!pendingToken) {
+      Alert.alert(t("error"), isRtl ? "سیشن ختم ہو گیا۔ دوبارہ کوشش کریں۔" : "Session expired. Please try again.");
+      setScreen("phone");
+      return;
+    }
     try {
+      await AsyncStorage.setItem("fluid_token", pendingToken);
       const resp = await registerMutation.mutateAsync({
         data: { name: name.trim(), role },
       });
@@ -143,8 +165,16 @@ export default function AuthScreen() {
       await setAuth(u, pendingToken);
       await setOnboarded(true);
       router.replace("/(tabs)/home");
-    } catch {
-      Alert.alert(t("error"), t("registrationError"));
+    } catch (err: any) {
+      await AsyncStorage.removeItem("fluid_token");
+      const rawMsg: string = err?.data?.error || err?.message || "";
+      const isNetErr = rawMsg.toLowerCase().includes("network") || rawMsg.toLowerCase().includes("failed");
+      Alert.alert(
+        t("error"),
+        isNetErr
+          ? (isRtl ? "انٹرنیٹ چیک کریں اور دوبارہ کوشش کریں" : "Check internet and try again")
+          : t("registrationError")
+      );
     }
   };
 
@@ -212,7 +242,7 @@ export default function AuthScreen() {
               otpRefs={otpRefs}
               onChange={handleOtpChange}
               onKeyPress={handleOtpKeyPress}
-              onBack={() => { setScreen("phone"); setOtp(["", "", "", ""]); }}
+              onBack={() => { setScreen("phone"); setOtp(["", "", "", ""]); isVerifyingRef.current = false; }}
               onVerify={() => handleVerify()}
               loading={verifyOtpMutation.isPending}
               onResend={handlePhoneContinue}
@@ -330,6 +360,7 @@ function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify
             maxLength={1}
             textAlign="center"
             autoFocus={i === 0}
+            editable={!loading}
           />
         ))}
       </View>
@@ -341,7 +372,7 @@ function OtpScreen({ phone, otp, otpRefs, onChange, onKeyPress, onBack, onVerify
         </View>
       )}
 
-      <TouchableOpacity onPress={onResend} style={styles.resendBtn}>
+      <TouchableOpacity onPress={onResend} style={styles.resendBtn} disabled={loading}>
         <Text style={[styles.resendText, { color: colors.mutedForeground }]}>
           {t("resend")}{" "}
           <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>{t("resendBtn")}</Text>
@@ -464,8 +495,8 @@ function RoleScreen({ onSelect, loading, colors, isRtl }: any) {
             </LinearGradient>
           ) : (
             <View style={[styles.roleCard, { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.border, flexDirection: isRtl ? "row-reverse" : "row" }]}>
-              <View style={[styles.roleIconCircle, { backgroundColor: colors.secondary + "15" }]}>
-                <Ionicons name="car-sport" size={24} color={colors.secondary} />
+              <View style={[styles.roleIconCircle, { backgroundColor: "#2170E4" + "15" }]}>
+                <Ionicons name="car-sport" size={24} color="#2170E4" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.roleCardTitle, { color: colors.foreground, textAlign: align }]}>{t("driver")}</Text>
@@ -572,13 +603,20 @@ const styles = StyleSheet.create({
   },
   successBadgeText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   roleCard: {
-    padding: 16, borderRadius: 18,
-    alignItems: "center", gap: 14,
+    borderRadius: 18, padding: 16, alignItems: "center", gap: 14,
   },
-  roleIconCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  roleCardTitle: { fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 2 },
-  roleCardTitleSelected: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 2 },
-  roleCardSub: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
-  roleCardSubSelected: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
-  roleCheck: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
+  roleCardTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  roleCardSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+  roleCardTitleSelected: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#fff" },
+  roleCardSubSelected: { fontSize: 12, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.8)", marginTop: 2 },
+  roleIconCircle: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: "#fff",
+    alignItems: "center", justifyContent: "center",
+  },
+  roleCheck: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: "#fff",
+    alignItems: "center", justifyContent: "center",
+  },
 });
