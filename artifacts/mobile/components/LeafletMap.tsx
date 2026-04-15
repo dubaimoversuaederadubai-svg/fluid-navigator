@@ -1,5 +1,5 @@
-import React, { useRef, useCallback } from "react";
-import { StyleSheet, View, Platform } from "react-native";
+import React, { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
+import { Platform, StyleSheet, View } from "react-native";
 import WebView from "react-native-webview";
 
 export interface MapMessage {
@@ -11,6 +11,10 @@ export interface MapMessage {
   durationMin?: number;
 }
 
+export interface LeafletMapRef {
+  sendCommand: (data: object) => void;
+}
+
 interface LeafletMapProps {
   pickupAddress?: string;
   dropoffAddress?: string;
@@ -20,6 +24,8 @@ interface LeafletMapProps {
   style?: any;
   driverLat?: number;
   driverLng?: number;
+  userLat?: number;
+  userLng?: number;
 }
 
 const MAP_HTML = `<!DOCTYPE html>
@@ -84,11 +90,7 @@ function drawRoute() {
         var durMin = Math.round(route.duration / 60);
         var coords = route.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
         routeLine = L.polyline(coords, {
-          color: '#2170E4',
-          weight: 5,
-          opacity: 0.85,
-          lineCap: 'round',
-          lineJoin: 'round'
+          color: '#2170E4', weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round'
         }).addTo(map);
         var bounds = L.latLngBounds([pickupCoords, dropoffCoords]);
         map.fitBounds(bounds, { padding: [60, 60] });
@@ -169,24 +171,44 @@ function reverseGeocode(lat, lng, isPickup) {
     }).catch(function(){});
 }
 
+function setUserLocation(lat, lng) {
+  if (userMarker) map.removeLayer(userMarker);
+  userMarker = L.marker([lat, lng], { icon: makeIcon('custom-user', '🔵') }).addTo(map);
+  userMarker.bindPopup('<b>آپ کی موجودہ جگہ</b>');
+  map.setView([lat, lng], 15);
+  if (!pickupCoords) {
+    pickupCoords = [lat, lng];
+    if (pickupMarker) map.removeLayer(pickupMarker);
+    pickupMarker = L.marker(pickupCoords, { icon: makeIcon('custom-pickup', '📍'), draggable: true }).addTo(map);
+    pickupMarker.bindPopup('<b>📍 آپ کی جگہ</b>').openPopup();
+    pickupMarker.on('dragend', function(e) {
+      var ll = e.target.getLatLng();
+      pickupCoords = [ll.lat, ll.lng];
+      reverseGeocode(ll.lat, ll.lng, true);
+      if (dropoffCoords) drawRoute();
+    });
+    reverseGeocode(lat, lng, true);
+  }
+}
+
 function initMap(cfg) {
   mode = cfg.mode || 'picker';
   vehicleType = cfg.vehicleType || 'car';
-  var center = cfg.center || [31.5204, 74.3587];
+  var center = (cfg.userLat && cfg.userLng) ? [cfg.userLat, cfg.userLng] : (cfg.center || [31.5204, 74.3587]);
+  var zoom = (cfg.userLat && cfg.userLng) ? 15 : 13;
 
-  map = L.map('map', { zoomControl: true, attributionControl: false }).setView(center, 13);
+  map = L.map('map', { zoomControl: true, attributionControl: false }).setView(center, zoom);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19
   }).addTo(map);
 
-  if (cfg.userLat) {
-    userMarker = L.marker([cfg.userLat, cfg.userLng], { icon: makeIcon('custom-user', '🔵') }).addTo(map);
-    userMarker.bindPopup('<b>آپ کی موجودہ جگہ</b>');
+  if (cfg.userLat && cfg.userLng) {
+    setUserLocation(cfg.userLat, cfg.userLng);
   }
 
-  if (cfg.pickup) geocode(cfg.pickup, true);
-  if (cfg.dropoff) geocode(cfg.dropoff, false);
+  if (cfg.pickup && cfg.pickup.length > 2) geocode(cfg.pickup, true);
+  if (cfg.dropoff && cfg.dropoff.length > 2) geocode(cfg.dropoff, false);
 
   if (cfg.driverLat) {
     var driverEmoji = vehicleType === 'bike' ? '🏍️' : vehicleType === 'rickshaw' ? '🛺' : '🚗';
@@ -243,18 +265,21 @@ var messageHandler = function(event) {
     if (data.action === 'init') { initMap(data); }
     else if (data.action === 'set_pickup') { geocode(data.address, true); }
     else if (data.action === 'set_dropoff') { geocode(data.address, false); }
-    else if (data.action === 'update_driver') { updateDriver(data.lat, data.lng); }
-    else if (data.action === 'set_user') {
-      if (userMarker) map.removeLayer(userMarker);
-      userMarker = L.marker([data.lat, data.lng], { icon: makeIcon('custom-user', '🔵') }).addTo(map);
-      map.setView([data.lat, data.lng], 14);
-      if (!pickupCoords) {
-        pickupCoords = [data.lat, data.lng];
-        if (pickupMarker) map.removeLayer(pickupMarker);
-        pickupMarker = L.marker(pickupCoords, { icon: makeIcon('custom-pickup', '📍'), draggable: true }).addTo(map);
-        reverseGeocode(data.lat, data.lng, true);
-      }
+    else if (data.action === 'set_pickup_coords') {
+      pickupCoords = [data.lat, data.lng];
+      if (pickupMarker) map.removeLayer(pickupMarker);
+      pickupMarker = L.marker(pickupCoords, { icon: makeIcon('custom-pickup', '📍'), draggable: true }).addTo(map);
+      map.setView(pickupCoords, 15);
+      if (dropoffCoords) drawRoute();
     }
+    else if (data.action === 'set_dropoff_coords') {
+      dropoffCoords = [data.lat, data.lng];
+      if (dropoffMarker) map.removeLayer(dropoffMarker);
+      dropoffMarker = L.marker(dropoffCoords, { icon: makeIcon('custom-dropoff', '🏁'), draggable: true }).addTo(map);
+      if (pickupCoords) drawRoute();
+    }
+    else if (data.action === 'update_driver') { updateDriver(data.lat, data.lng); }
+    else if (data.action === 'set_user') { setUserLocation(data.lat, data.lng); }
   } catch(e) {}
 };
 document.addEventListener('message', messageHandler);
@@ -263,60 +288,89 @@ window.addEventListener('message', messageHandler);
 </body>
 </html>`;
 
-export default function LeafletMap({
-  pickupAddress,
-  dropoffAddress,
-  mode = "picker",
-  vehicleType = "car",
-  onMessage,
-  style,
-  driverLat,
-  driverLng,
-}: LeafletMapProps) {
-  const webViewRef = useRef<WebView>(null);
-
-  const onLoadEnd = useCallback(() => {
-    const initData = {
-      action: "init",
-      mode,
-      vehicleType,
-      pickup: pickupAddress,
-      dropoff: dropoffAddress,
-      center: [31.5204, 74.3587],
+const LeafletMap = forwardRef<LeafletMapRef, LeafletMapProps>(
+  (
+    {
+      pickupAddress,
+      dropoffAddress,
+      mode = "picker",
+      vehicleType = "car",
+      onMessage,
+      style,
       driverLat,
       driverLng,
-    };
-    webViewRef.current?.injectJavaScript(`
-      (function() {
-        var e = new Event('message');
-        e.data = ${JSON.stringify(JSON.stringify(initData))};
-        document.dispatchEvent(e);
-        window.dispatchEvent(e);
-      })();
-      true;
-    `);
-  }, [pickupAddress, dropoffAddress, mode, vehicleType, driverLat, driverLng]);
+      userLat,
+      userLng,
+    },
+    ref
+  ) => {
+    const webViewRef = useRef<WebView>(null);
 
-  const sendCommand = useCallback((data: object) => {
-    webViewRef.current?.injectJavaScript(`
-      (function() {
-        var e = new Event('message');
-        e.data = ${JSON.stringify(JSON.stringify(data))};
-        document.dispatchEvent(e);
-        window.dispatchEvent(e);
-      })();
-      true;
-    `);
-  }, []);
+    const sendCommand = useCallback((data: object) => {
+      webViewRef.current?.injectJavaScript(`
+        (function() {
+          var e = new Event('message');
+          e.data = ${JSON.stringify(JSON.stringify(data))};
+          document.dispatchEvent(e);
+          window.dispatchEvent(e);
+        })();
+        true;
+      `);
+    }, []);
 
-  const handleMessage = useCallback((event: any) => {
-    try {
-      const data: MapMessage = JSON.parse(event.nativeEvent.data);
-      onMessage?.(data);
-    } catch {}
-  }, [onMessage]);
+    useImperativeHandle(ref, () => ({ sendCommand }), [sendCommand]);
 
-  if (Platform.OS === "web") {
+    const onLoadEnd = useCallback(() => {
+      const initData = {
+        action: "init",
+        mode,
+        vehicleType,
+        pickup: pickupAddress,
+        dropoff: dropoffAddress,
+        center: [31.5204, 74.3587],
+        userLat,
+        userLng,
+        driverLat,
+        driverLng,
+      };
+      webViewRef.current?.injectJavaScript(`
+        (function() {
+          var e = new Event('message');
+          e.data = ${JSON.stringify(JSON.stringify(initData))};
+          document.dispatchEvent(e);
+          window.dispatchEvent(e);
+        })();
+        true;
+      `);
+    }, [pickupAddress, dropoffAddress, mode, vehicleType, driverLat, driverLng, userLat, userLng]);
+
+    const handleMessage = useCallback(
+      (event: any) => {
+        try {
+          const data: MapMessage = JSON.parse(event.nativeEvent.data);
+          onMessage?.(data);
+        } catch {}
+      },
+      [onMessage]
+    );
+
+    if (Platform.OS === "web") {
+      return (
+        <View style={[styles.container, style]}>
+          <WebView
+            ref={webViewRef}
+            source={{ html: MAP_HTML }}
+            style={styles.webview}
+            onLoadEnd={onLoadEnd}
+            onMessage={handleMessage}
+            scrollEnabled={false}
+            allowsInlineMediaPlayback
+            javaScriptEnabled
+          />
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.container, style]}>
         <WebView
@@ -328,29 +382,16 @@ export default function LeafletMap({
           scrollEnabled={false}
           allowsInlineMediaPlayback
           javaScriptEnabled
+          domStorageEnabled
+          originWhitelist={["*"]}
+          mixedContentMode="always"
         />
       </View>
     );
   }
+);
 
-  return (
-    <View style={[styles.container, style]}>
-      <WebView
-        ref={webViewRef}
-        source={{ html: MAP_HTML }}
-        style={styles.webview}
-        onLoadEnd={onLoadEnd}
-        onMessage={handleMessage}
-        scrollEnabled={false}
-        allowsInlineMediaPlayback
-        javaScriptEnabled
-        domStorageEnabled
-        originWhitelist={["*"]}
-        mixedContentMode="always"
-      />
-    </View>
-  );
-}
+export default LeafletMap;
 
 const styles = StyleSheet.create({
   container: { overflow: "hidden" },
