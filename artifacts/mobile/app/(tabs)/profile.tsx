@@ -49,7 +49,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           try { await logoutMutation.mutateAsync(); } catch {}
           await logout();
-          router.replace("/auth");
+          router.replace("/");
         },
       },
     ]);
