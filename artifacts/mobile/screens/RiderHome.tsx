@@ -43,6 +43,7 @@ export default function RiderHome() {
   const [durationMin, setDurationMin] = useState<number>(0);
   const [locating, setLocating] = useState(false);
   const [mapKey, setMapKey] = useState(0);
+  const [pickupLatLng, setPickupLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const mapRef = useRef<any>(null);
 
   const { data: activeRideData } = useGetActiveRide({
@@ -103,6 +104,7 @@ export default function RiderHome() {
       }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude, longitude } = loc.coords;
+      setPickupLatLng({ lat: latitude, lng: longitude });
       const resp = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=16`,
         { headers: { "Accept-Language": "ur" } }
@@ -133,6 +135,8 @@ export default function RiderHome() {
         distanceKm: distanceKm.toString(),
         durationMin: durationMin.toString(),
         suggestedFare: (calculatedFare ?? minFare).toString(),
+        pickupLat: pickupLatLng?.lat?.toString() ?? "",
+        pickupLng: pickupLatLng?.lng?.toString() ?? "",
       },
     });
   };
