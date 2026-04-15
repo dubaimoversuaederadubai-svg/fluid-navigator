@@ -8,10 +8,13 @@ export const ridesTable = pgTable("rides", {
   driverId: text("driver_id"),
   pickup: text("pickup").notNull(),
   dropoff: text("dropoff").notNull(),
+  pickupLat: real("pickup_lat"),
+  pickupLng: real("pickup_lng"),
   offeredFare: real("offered_fare").notNull(),
   finalFare: real("final_fare"),
   distance: text("distance").notNull().default(""),
   duration: text("duration").notNull().default(""),
+  vehicleType: text("vehicle_type").notNull().default("car"),
   status: text("status", {
     enum: ["searching", "accepted", "on_the_way", "trip_started", "completed", "cancelled"],
   }).notNull().default("searching"),
