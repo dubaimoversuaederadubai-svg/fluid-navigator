@@ -37,6 +37,8 @@ export default function FareNegotiationScreen() {
     distanceKm?: string;
     durationMin?: string;
     suggestedFare?: string;
+    pickupLat?: string;
+    pickupLng?: string;
   }>();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -77,6 +79,8 @@ export default function FareNegotiationScreen() {
   const postRide = async () => {
     try {
       const km = routeKm > 0 ? routeKm : distanceKm;
+      const pLat = params.pickupLat ? parseFloat(params.pickupLat) : undefined;
+      const pLng = params.pickupLng ? parseFloat(params.pickupLng) : undefined;
       const resp = await createRideMutation.mutateAsync({
         data: {
           pickup,
@@ -84,7 +88,9 @@ export default function FareNegotiationScreen() {
           offeredFare: myFare,
           distance: km > 0 ? `${km.toFixed(1)} ${isUrdu ? "کلومیٹر" : "km"}` : "",
           duration: durationMin > 0 ? formatDuration(durationMin) : "",
-        },
+          ...(pLat && pLng ? { pickupLat: pLat, pickupLng: pLng } : {}),
+          vehicleType,
+        } as any,
       });
       setRideId(resp.ride.id);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
