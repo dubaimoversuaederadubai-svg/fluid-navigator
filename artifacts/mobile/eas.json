@@ -13,7 +13,7 @@
       },
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://d2cfe261-c07d-4e6e-9024-39ace7ab8b0a-00-3glti14s2mdya.picard.replit.dev:8080"
+        "EXPO_PUBLIC_API_URL": "https://13-60-191-187.sslip.io"
       }
     },
     "production": {
