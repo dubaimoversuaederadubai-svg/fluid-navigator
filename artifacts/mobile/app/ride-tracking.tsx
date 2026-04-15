@@ -23,7 +23,7 @@ export default function RideTrackingScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const { activeRide, setActiveRide } = useApp();
-  const { t } = useLang();
+  const { t, isUrdu } = useLang();
   const queryClient = useQueryClient();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -40,10 +40,11 @@ export default function RideTrackingScreen() {
   const currentStatus = activeRideData?.ride?.status ?? activeRide?.status ?? "accepted";
 
   const STATUS_LABELS: Record<string, string> = {
-    accepted: t("accepted" as any) ?? "Driver accepted your ride",
-    on_the_way: "Driver is on the way",
-    trip_started: "Trip in progress",
-    searching: "Finding a driver...",
+    accepted: isUrdu ? "ڈرائیور نے سواری قبول کر لی" : "Driver accepted your ride",
+    on_the_way: isUrdu ? "ڈرائیور آ رہا ہے" : "Driver is on the way",
+    trip_started: isUrdu ? "سفر جاری ہے" : "Trip in progress",
+    searching: isUrdu ? "ڈرائیور تلاش ہو رہا ہے..." : "Finding a driver...",
+    completed: isUrdu ? "سفر مکمل" : "Trip completed",
   };
 
   if (!activeRide && !activeRideData?.ride) {
