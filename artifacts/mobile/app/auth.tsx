@@ -60,7 +60,11 @@ export default function AuthScreen() {
         setTimeout(() => setOtp(resp.devCode!.split("")), 300);
       }
     } catch (err: any) {
-      const msg = err?.data?.error || err?.message || t("otpSendError");
+      const rawMsg: string = err?.data?.error || err?.message || "";
+      const isNetErr = rawMsg.toLowerCase().includes("network") || rawMsg.toLowerCase().includes("failed to fetch");
+      const msg = isNetErr
+        ? (isRtl ? "سرور سے رابطہ نہ ہو سکا۔ انٹرنیٹ چیک کریں۔" : "Cannot reach server. Check internet connection.")
+        : rawMsg || t("otpSendError");
       Alert.alert(t("error"), msg);
       return;
     }
