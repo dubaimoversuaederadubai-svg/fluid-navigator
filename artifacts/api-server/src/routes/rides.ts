@@ -1,10 +1,20 @@
 import { Router } from "express";
 import { db, ridesTable, usersTable, bidsTable, reviewsTable } from "@workspace/db";
-import { eq, and, or, desc, ne } from "drizzle-orm";
+import { eq, and, or, desc } from "drizzle-orm";
 import { generateId } from "../lib/auth.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
 
 const router = Router();
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 async function formatRide(ride: any, riderUser: any, driverUser?: any) {
   return {
@@ -13,10 +23,13 @@ async function formatRide(ride: any, riderUser: any, driverUser?: any) {
     driverId: ride.driverId ?? null,
     pickup: ride.pickup,
     dropoff: ride.dropoff,
+    pickupLat: ride.pickupLat ?? null,
+    pickupLng: ride.pickupLng ?? null,
     offeredFare: ride.offeredFare,
     finalFare: ride.finalFare ?? null,
     distance: ride.distance,
     duration: ride.duration,
+    vehicleType: ride.vehicleType ?? "car",
     status: ride.status,
     createdAt: ride.createdAt?.toISOString?.() ?? ride.createdAt,
     riderName: riderUser?.name ?? "",
@@ -34,7 +47,10 @@ router.post("/", requireAuth, async (req, res) => {
     res.status(403).json({ error: "Only riders can create rides" });
     return;
   }
-  const { pickup, dropoff, offeredFare, distance = "", duration = "" } = req.body;
+  const {
+    pickup, dropoff, offeredFare, distance = "", duration = "",
+    pickupLat, pickupLng, vehicleType = "car"
+  } = req.body;
   if (!pickup || !dropoff || !offeredFare) {
     res.status(400).json({ error: "pickup, dropoff, and offeredFare are required" });
     return;
@@ -43,6 +59,9 @@ router.post("/", requireAuth, async (req, res) => {
   await db.insert(ridesTable).values({
     id: rideId, riderId: user.id, pickup, dropoff,
     offeredFare, distance, duration,
+    pickupLat: pickupLat ?? null,
+    pickupLng: pickupLng ?? null,
+    vehicleType,
   });
   const ride = (await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1))[0]!;
   res.status(201).json({ ride: await formatRide(ride, user) });
@@ -135,21 +154,39 @@ router.get("/active", requireAuth, async (req, res) => {
 
 router.get("/", requireAuth, async (req, res) => {
   const user = (req as any).user;
-  const { status } = req.query as { status?: string };
+  const { status, lat, lng, radius } = req.query as {
+    status?: string; lat?: string; lng?: string; radius?: string;
+  };
+
   let rides: any[];
   if (user.role === "driver") {
-    rides = await db
+    const allSearching = await db
       .select()
       .from(ridesTable)
       .where(eq(ridesTable.status, "searching"))
       .orderBy(desc(ridesTable.createdAt))
-      .limit(20);
+      .limit(50);
+
+    const driverLat = lat ? parseFloat(lat) : null;
+    const driverLng = lng ? parseFloat(lng) : null;
+    const radiusKm = radius ? parseFloat(radius) : 1.0;
+
+    if (driverLat !== null && driverLng !== null && !isNaN(driverLat) && !isNaN(driverLng)) {
+      rides = allSearching.filter((r) => {
+        if (r.pickupLat == null || r.pickupLng == null) return true;
+        const dist = haversineKm(driverLat, driverLng, r.pickupLat, r.pickupLng);
+        return dist <= radiusKm;
+      });
+    } else {
+      rides = allSearching;
+    }
   } else {
     const cond = status
       ? and(eq(ridesTable.riderId, user.id), eq(ridesTable.status, status as any))
       : eq(ridesTable.riderId, user.id);
     rides = await db.select().from(ridesTable).where(cond).orderBy(desc(ridesTable.createdAt)).limit(20);
   }
+
   const formatted = await Promise.all(
     rides.map(async (r) => {
       const riders = await db.select().from(usersTable).where(eq(usersTable.id, r.riderId)).limit(1);
@@ -174,6 +211,52 @@ router.get("/:rideId", requireAuth, async (req, res) => {
   const drivers = r.driverId
     ? await db.select().from(usersTable).where(eq(usersTable.id, r.driverId)).limit(1)
     : [];
+  res.json({ ride: await formatRide(r, riders[0], drivers[0]) });
+});
+
+router.put("/:rideId/driver-accept", requireAuth, async (req, res) => {
+  const user = (req as any).user;
+  const { rideId } = req.params;
+
+  if (user.role !== "driver") {
+    res.status(403).json({ error: "Only drivers can use this endpoint" });
+    return;
+  }
+
+  const rides = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId!)).limit(1);
+  if (!rides.length) {
+    res.status(404).json({ error: "Ride not found" });
+    return;
+  }
+  const ride = rides[0]!;
+  if (ride.status !== "searching") {
+    res.status(400).json({ error: "Ride is no longer available" });
+    return;
+  }
+
+  const { amount, eta = "5 min" } = req.body;
+  const finalAmount = amount ?? ride.offeredFare;
+
+  const bidId = generateId();
+  await db.insert(bidsTable).values({
+    id: bidId, rideId: rideId!, driverId: user.id,
+    amount: finalAmount, eta, status: "accepted",
+  });
+
+  const updated = await db
+    .update(ridesTable)
+    .set({
+      status: "accepted",
+      driverId: user.id,
+      finalFare: finalAmount,
+    })
+    .where(eq(ridesTable.id, rideId!))
+    .returning();
+
+  const r = updated[0]!;
+  const riders = await db.select().from(usersTable).where(eq(usersTable.id, r.riderId)).limit(1);
+  const drivers = await db.select().from(usersTable).where(eq(usersTable.id, user.id)).limit(1);
+
   res.json({ ride: await formatRide(r, riders[0], drivers[0]) });
 });
 
