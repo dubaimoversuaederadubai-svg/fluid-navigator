@@ -13,7 +13,7 @@
       },
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://13.60.191.187:8080"
+        "EXPO_PUBLIC_API_URL": "http://56.228.25.133:8080"
       }
     },
     "production": {
