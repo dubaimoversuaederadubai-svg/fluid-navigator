@@ -26,6 +26,17 @@ import { VEHICLE_CONFIG, VehicleType, calculateFare, formatDistance, formatDurat
 
 const { height } = Dimensions.get("window");
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function RiderHome() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
@@ -45,6 +56,7 @@ export default function RiderHome() {
   const [userLat, setUserLat] = useState<number | undefined>(undefined);
   const [userLng, setUserLng] = useState<number | undefined>(undefined);
   const [pickupLatLng, setPickupLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [dropoffLatLng, setDropoffLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const mapRef = useRef<LeafletMapRef>(null);
   const gpsAttemptedRef = useRef(false);
 
@@ -85,11 +97,7 @@ export default function RiderHome() {
     }
   }, []);
 
-  if (activeRide) {
-    router.replace("/ride-tracking");
-    return null;
-  }
-
+  // ALL hooks must be called before any conditional return
   const handleMapMessage = useCallback((msg: MapMessage) => {
     if (msg.type === "distance" && msg.distanceKm) {
       setDistanceKm(msg.distanceKm);
@@ -105,6 +113,25 @@ export default function RiderHome() {
       setPickupLatLng({ lat: msg.lat, lng: msg.lng });
     }
   }, []);
+
+  // Recalculate distance whenever both coords are available
+  useEffect(() => {
+    if (pickupLatLng && dropoffLatLng) {
+      const km = haversineKm(pickupLatLng.lat, pickupLatLng.lng, dropoffLatLng.lat, dropoffLatLng.lng);
+      const roundedKm = parseFloat(km.toFixed(2));
+      if (roundedKm > 0) {
+        setDistanceKm(roundedKm);
+        // Estimate duration: ~2 min/km in city traffic
+        setDurationMin(Math.max(5, Math.round(roundedKm * 2.5)));
+      }
+    }
+  }, [pickupLatLng, dropoffLatLng]);
+
+  // Conditional redirect — AFTER all hooks
+  if (activeRide) {
+    router.replace("/ride-tracking");
+    return null;
+  }
 
   const getMyLocation = async () => {
     setLocating(true);
@@ -150,7 +177,17 @@ export default function RiderHome() {
 
   const handleDropoffSelect = (address: string, lat: number, lng: number) => {
     setDropoff(address);
+    setDropoffLatLng({ lat, lng });
     mapRef.current?.sendCommand({ action: "set_dropoff_coords", lat, lng });
+    // Immediately calculate fare using haversine if pickup is known
+    if (pickupLatLng) {
+      const km = haversineKm(pickupLatLng.lat, pickupLatLng.lng, lat, lng);
+      const roundedKm = parseFloat(km.toFixed(2));
+      if (roundedKm > 0) {
+        setDistanceKm(roundedKm);
+        setDurationMin(Math.max(5, Math.round(roundedKm * 2.5)));
+      }
+    }
   };
 
   const calculatedFare = distanceKm > 0 ? calculateFare(distanceKm, vehicleType) : null;
