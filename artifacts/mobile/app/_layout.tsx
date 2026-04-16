@@ -1,10 +1,3 @@
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-  useFonts,
-} from "@expo-google-fonts/inter";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -56,24 +49,9 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts(
-    isWeb
-      ? {}
-      : {
-          Inter_400Regular,
-          Inter_500Medium,
-          Inter_600SemiBold,
-          Inter_700Bold,
-        }
-  );
-
   useEffect(() => {
-    if (isWeb || fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
-  if (!isWeb && !fontsLoaded && !fontError) return null;
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   return (
     <SafeAreaProvider>
