@@ -21,7 +21,7 @@ import { LanguageProvider } from "@/context/LanguageContext";
 
 SplashScreen.preventAutoHideAsync();
 
-const EC2_API_URL = "http://13.63.86.170";
+const EC2_API_URL = "https://13-63-86-170.sslip.io";
 const isWeb = Platform.OS === "web";
 const webApiUrl = process.env.EXPO_PUBLIC_API_URL_WEB;
 const nativeApiUrl = process.env.EXPO_PUBLIC_API_URL || EC2_API_URL;
