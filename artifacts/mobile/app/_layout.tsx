@@ -21,15 +21,12 @@ import { LanguageProvider } from "@/context/LanguageContext";
 
 SplashScreen.preventAutoHideAsync();
 
+const EC2_API_URL = "http://13.63.86.170";
 const isWeb = Platform.OS === "web";
 const webApiUrl = process.env.EXPO_PUBLIC_API_URL_WEB;
-const nativeApiUrl = process.env.EXPO_PUBLIC_API_URL;
-const apiUrl = isWeb ? (webApiUrl || nativeApiUrl) : (nativeApiUrl || webApiUrl);
-if (apiUrl) {
-  setBaseUrl(apiUrl);
-} else if (process.env.EXPO_PUBLIC_DOMAIN) {
-  setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}:8080`);
-}
+const nativeApiUrl = process.env.EXPO_PUBLIC_API_URL || EC2_API_URL;
+const apiUrl = isWeb ? (webApiUrl || nativeApiUrl) : nativeApiUrl;
+setBaseUrl(apiUrl ?? EC2_API_URL);
 setAuthTokenGetter(async () => {
   return AsyncStorage.getItem("fluid_token");
 });
