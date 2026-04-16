@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useQueryClient } from "@tanstack/react-query";
 import React, {
   createContext,
   useCallback,
@@ -6,6 +7,7 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import { customFetch } from "@workspace/api-client-react";
 
 export type UserRole = "rider" | "driver";
 
@@ -17,6 +19,15 @@ export interface AppUser {
   rating: number;
   totalRides: number;
   isOnline?: boolean;
+  vehicleType?: "bike" | "rickshaw" | "car";
+  driverLat?: number | null;
+  driverLng?: number | null;
+  profilePhoto?: string | null;
+  cnicVerified?: boolean;
+  licenseVerified?: boolean;
+  vehicleModel?: string | null;
+  vehicleNumber?: string | null;
+  paymentMethod?: string;
 }
 
 export interface ActiveRide {
@@ -35,6 +46,9 @@ export interface ActiveRide {
   driverId?: string;
   riderId?: string;
   riderName?: string;
+  vehicleType?: "bike" | "rickshaw" | "car";
+  pickupLat?: number;
+  pickupLng?: number;
 }
 
 interface AppContextType {
@@ -65,6 +79,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [onboarded, setOnboardedState] = useState(false);
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const load = async () => {
@@ -118,16 +133,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshUser = useCallback(async () => {
-    const storedToken = await AsyncStorage.getItem("fluid_token");
-    if (!storedToken) return;
-    const apiBase = getApiBase();
-    if (!apiBase) return;
     try {
-      const resp = await fetch(`${apiBase}/api/users/me`, {
-        headers: { Authorization: `Bearer ${storedToken}` },
-      });
-      if (resp.ok) {
-        const data = await resp.json();
+      const data: any = await customFetch("/api/users/me");
+      if (data?.user) {
         setUser(data.user);
         await AsyncStorage.setItem("fluid_user", JSON.stringify(data.user));
       }
@@ -152,8 +160,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setToken(null);
     setActiveRide(null);
+    // Clear all cached API data so next user starts fresh
+    queryClient.clear();
     await AsyncStorage.multiRemove(["fluid_user", "fluid_token"]);
-  }, []);
+  }, [queryClient]);
 
   return (
     <AppContext.Provider

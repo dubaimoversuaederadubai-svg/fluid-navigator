@@ -15,6 +15,14 @@ export interface LeafletMapRef {
   sendCommand: (data: object) => void;
 }
 
+interface NearbyDriver {
+  id: string;
+  name?: string;
+  vehicleType?: "bike" | "rickshaw" | "car";
+  lat: number;
+  lng: number;
+}
+
 interface LeafletMapProps {
   pickupAddress?: string;
   dropoffAddress?: string;
@@ -26,6 +34,12 @@ interface LeafletMapProps {
   driverLng?: number;
   userLat?: number;
   userLng?: number;
+  nearbyDrivers?: NearbyDriver[];
+  pickupLat?: number;
+  pickupLng?: number;
+  dropoffLat?: number;
+  dropoffLng?: number;
+  tripStarted?: boolean;
 }
 
 const MAP_HTML = `<!DOCTYPE html>
@@ -39,9 +53,10 @@ const MAP_HTML = `<!DOCTYPE html>
   html, body, #map { width:100%; height:100%; background:#d4e8d4; }
   .custom-pickup { background:#10B981; color:#fff; border:3px solid #fff; border-radius:50%; width:32px!important; height:32px!important; display:flex; align-items:center; justify-content:center; font-size:16px; box-shadow:0 3px 12px rgba(0,0,0,0.3); }
   .custom-dropoff { background:#EF4444; color:#fff; border:3px solid #fff; border-radius:50%; width:32px!important; height:32px!important; display:flex; align-items:center; justify-content:center; font-size:16px; box-shadow:0 3px 12px rgba(0,0,0,0.3); }
-  .custom-driver { background:#2170E4; color:#fff; border:3px solid #fff; border-radius:50%; width:40px!important; height:40px!important; display:flex; align-items:center; justify-content:center; font-size:20px; box-shadow:0 3px 12px rgba(0,0,0,0.4); animation:pulse 2s infinite; }
+  .custom-driver { background:#2170E4; color:#fff; border:3px solid #fff; border-radius:50%; width:40px!important; height:40px!important; display:flex; align-items:center; justify-content:center; font-size:20px; box-shadow:0 3px 12px rgba(0,0,0,0.4); animation:pulse 1.5s infinite; }
+  .custom-nearby { background:#fff; border:2.5px solid #10B981; border-radius:50%; width:36px!important; height:36px!important; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 2px 8px rgba(0,0,0,0.2); }
   .custom-user { background:#10B981; color:#fff; border:3px solid #fff; border-radius:50%; width:28px!important; height:28px!important; display:flex; align-items:center; justify-content:center; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,0.3); }
-  @keyframes pulse { 0%,100%{transform:scale(1);opacity:1;} 50%{transform:scale(1.1);opacity:0.9;} }
+  @keyframes pulse { 0%,100%{transform:scale(1);box-shadow:0 3px 12px rgba(33,112,228,0.4);} 50%{transform:scale(1.15);box-shadow:0 3px 20px rgba(33,112,228,0.7);} }
   .leaflet-popup-content-wrapper { border-radius:14px; box-shadow:0 4px 16px rgba(0,0,0,0.15); }
   .leaflet-popup-content { font-family:sans-serif; font-size:13px; margin:8px 14px; }
 </style>
@@ -50,11 +65,13 @@ const MAP_HTML = `<!DOCTYPE html>
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-var map, pickupMarker, dropoffMarker, driverMarker, routeLine, userMarker;
+var map, pickupMarker, dropoffMarker, driverMarker, routeLine, userMarker, driverRouteLine;
+var nearbyMarkers = {};
 var mode = 'picker';
 var vehicleType = 'car';
 var pickupCoords = null;
 var dropoffCoords = null;
+var tripStarted = false;
 
 function sendMsg(data) {
   var str = JSON.stringify(data);
@@ -64,53 +81,76 @@ function sendMsg(data) {
   } catch(e) {}
 }
 
+function vehicleEmoji(vt) {
+  if (vt === 'bike') return '🏍️';
+  if (vt === 'rickshaw') return '🛺';
+  return '🚗';
+}
+
 function makeIcon(cls, emoji) {
   return L.divIcon({
     html: '<div class="' + cls + '">' + emoji + '</div>',
     className: '',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -16]
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -18]
   });
 }
 
-function drawRoute() {
-  if (!pickupCoords || !dropoffCoords) return;
-  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+function fetchRoute(fromLat, fromLng, toLat, toLng, callback) {
   var url = 'https://router.project-osrm.org/route/v1/driving/' +
-    pickupCoords[1] + ',' + pickupCoords[0] + ';' +
-    dropoffCoords[1] + ',' + dropoffCoords[0] +
+    fromLng + ',' + fromLat + ';' +
+    toLng + ',' + toLat +
     '?overview=full&geometries=geojson';
   fetch(url)
     .then(function(r){ return r.json(); })
     .then(function(data) {
       if (data.routes && data.routes[0]) {
         var route = data.routes[0];
+        var coords = route.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
         var distKm = (route.distance / 1000).toFixed(2);
         var durMin = Math.round(route.duration / 60);
-        var coords = route.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
-        routeLine = L.polyline(coords, {
-          color: '#2170E4', weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round'
-        }).addTo(map);
-        var bounds = L.latLngBounds([pickupCoords, dropoffCoords]);
-        map.fitBounds(bounds, { padding: [60, 60] });
-        sendMsg({ type: 'distance', distanceKm: parseFloat(distKm), durationMin: durMin });
+        callback(coords, parseFloat(distKm), durMin);
       }
     })
     .catch(function() {
-      var lat1 = pickupCoords[0], lng1 = pickupCoords[1];
-      var lat2 = dropoffCoords[0], lng2 = dropoffCoords[1];
-      var R = 6371;
-      var dLat = (lat2-lat1)*Math.PI/180;
-      var dLng = (lng2-lng1)*Math.PI/180;
-      var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
-      var distKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      if (routeLine) { map.removeLayer(routeLine); }
-      routeLine = L.polyline([pickupCoords, dropoffCoords], { color:'#2170E4', weight:4, opacity:0.7, dashArray:'10, 6' }).addTo(map);
-      var bounds = L.latLngBounds([pickupCoords, dropoffCoords]);
-      map.fitBounds(bounds, { padding: [60, 60] });
-      sendMsg({ type: 'distance', distanceKm: parseFloat(distKm.toFixed(2)), durationMin: Math.round(distKm * 3) });
+      // Fallback straight line
+      callback([[fromLat, fromLng], [toLat, toLng]], null, null);
     });
+}
+
+function drawRoute() {
+  if (!pickupCoords || !dropoffCoords) return;
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+  fetchRoute(pickupCoords[0], pickupCoords[1], dropoffCoords[0], dropoffCoords[1], function(coords, distKm, durMin) {
+    routeLine = L.polyline(coords, {
+      color: '#2170E4', weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round'
+    }).addTo(map);
+    var bounds = L.latLngBounds([pickupCoords, dropoffCoords]);
+    map.fitBounds(bounds, { padding: [60, 60] });
+    if (distKm !== null) sendMsg({ type: 'distance', distanceKm: distKm, durationMin: durMin });
+  });
+}
+
+// Draw route from driver's current position to pickup (for tracking mode)
+function drawDriverRoute(dLat, dLng) {
+  if (!pickupCoords) return;
+  if (driverRouteLine) { map.removeLayer(driverRouteLine); driverRouteLine = null; }
+  fetchRoute(dLat, dLng, pickupCoords[0], pickupCoords[1], function(coords, distKm, durMin) {
+    driverRouteLine = L.polyline(coords, {
+      color: '#10B981', weight: 4, opacity: 0.8, lineCap: 'round', lineJoin: 'round',
+      dashArray: tripStarted ? null : '12, 6'
+    }).addTo(map);
+    // Fit bounds to show driver + pickup
+    if (dropoffCoords && tripStarted) {
+      var bounds = L.latLngBounds([pickupCoords, dropoffCoords, [dLat, dLng]]);
+      map.fitBounds(bounds, { padding: [60, 60] });
+    } else {
+      var bounds = L.latLngBounds([[dLat, dLng], pickupCoords]);
+      map.fitBounds(bounds, { padding: [60, 60] });
+    }
+    if (distKm !== null) sendMsg({ type: 'distance', distanceKm: distKm, durationMin: durMin });
+  });
 }
 
 function geocode(address, isPickup) {
@@ -191,9 +231,39 @@ function setUserLocation(lat, lng) {
   }
 }
 
+function setNearbyDrivers(drivers) {
+  Object.values(nearbyMarkers).forEach(function(m) { map.removeLayer(m); });
+  nearbyMarkers = {};
+  if (!drivers || !drivers.length) return;
+  drivers.forEach(function(d) {
+    var emoji = vehicleEmoji(d.vehicleType);
+    var m = L.marker([d.lat, d.lng], { icon: makeIcon('custom-nearby', emoji) }).addTo(map);
+    var label = d.name || 'Driver';
+    m.bindPopup('<b>' + emoji + ' ' + label + '</b><br><small>' + (d.vehicleType || 'car') + '</small>');
+    nearbyMarkers[d.id] = m;
+  });
+}
+
+var driverRouteTimer = null;
+function updateDriver(lat, lng) {
+  var emoji = vehicleEmoji(vehicleType);
+  if (!driverMarker) {
+    driverMarker = L.marker([lat, lng], { icon: makeIcon('custom-driver', emoji) }).addTo(map);
+    driverMarker.bindPopup('<b>' + emoji + ' ڈرائیور</b>').openPopup();
+  } else {
+    driverMarker.setLatLng([lat, lng]);
+  }
+  // Re-draw driver route every 10 seconds max (throttle to avoid too many OSRM calls)
+  if (!driverRouteTimer) {
+    drawDriverRoute(lat, lng);
+    driverRouteTimer = setTimeout(function() { driverRouteTimer = null; }, 10000);
+  }
+}
+
 function initMap(cfg) {
   mode = cfg.mode || 'picker';
   vehicleType = cfg.vehicleType || 'car';
+  tripStarted = cfg.tripStarted || false;
   var center = (cfg.userLat && cfg.userLng) ? [cfg.userLat, cfg.userLng] : (cfg.center || [31.5204, 74.3587]);
   var zoom = (cfg.userLat && cfg.userLng) ? 15 : 13;
 
@@ -207,14 +277,41 @@ function initMap(cfg) {
     setUserLocation(cfg.userLat, cfg.userLng);
   }
 
-  if (cfg.pickup && cfg.pickup.length > 2) geocode(cfg.pickup, true);
-  if (cfg.dropoff && cfg.dropoff.length > 2) geocode(cfg.dropoff, false);
+  // Set pickup/dropoff from coordinates if provided (tracking mode)
+  if (cfg.pickupLat && cfg.pickupLng) {
+    pickupCoords = [cfg.pickupLat, cfg.pickupLng];
+    if (pickupMarker) map.removeLayer(pickupMarker);
+    pickupMarker = L.marker(pickupCoords, { icon: makeIcon('custom-pickup', '📍') }).addTo(map);
+    pickupMarker.bindPopup('<b>📍 Pickup</b>');
+  } else if (cfg.pickup && cfg.pickup.length > 2) {
+    geocode(cfg.pickup, true);
+  }
 
-  if (cfg.driverLat) {
-    var driverEmoji = vehicleType === 'bike' ? '🏍️' : vehicleType === 'rickshaw' ? '🛺' : '🚗';
+  if (cfg.dropoffLat && cfg.dropoffLng) {
+    dropoffCoords = [cfg.dropoffLat, cfg.dropoffLng];
+    if (dropoffMarker) map.removeLayer(dropoffMarker);
+    dropoffMarker = L.marker(dropoffCoords, { icon: makeIcon('custom-dropoff', '🏁') }).addTo(map);
+    dropoffMarker.bindPopup('<b>🏁 Dropoff</b>');
+  } else if (cfg.dropoff && cfg.dropoff.length > 2) {
+    geocode(cfg.dropoff, false);
+  }
+
+  if (pickupCoords && dropoffCoords && mode === 'tracking' && tripStarted) {
+    drawRoute(); // Show full pickup → dropoff route during trip
+  }
+
+  if (cfg.driverLat && cfg.driverLng) {
+    var driverEmoji = vehicleEmoji(vehicleType);
     driverMarker = L.marker([cfg.driverLat, cfg.driverLng], { icon: makeIcon('custom-driver', driverEmoji) }).addTo(map);
-    driverMarker.bindPopup('<b>ڈرائیور</b>').openPopup();
+    driverMarker.bindPopup('<b>' + driverEmoji + ' ڈرائیور</b>').openPopup();
+    if (!tripStarted && pickupCoords) {
+      drawDriverRoute(cfg.driverLat, cfg.driverLng);
+    }
     map.setView([cfg.driverLat, cfg.driverLng], 15);
+  }
+
+  if (cfg.nearbyDrivers && cfg.nearbyDrivers.length > 0) {
+    setNearbyDrivers(cfg.nearbyDrivers);
   }
 
   if (mode === 'picker') {
@@ -224,10 +321,12 @@ function initMap(cfg) {
         pickupCoords = [lat, lng];
         if (pickupMarker) map.removeLayer(pickupMarker);
         pickupMarker = L.marker(pickupCoords, { icon: makeIcon('custom-pickup', '📍'), draggable: true }).addTo(map);
+        sendMsg({ type: 'pickup_geocoded', lat: lat, lng: lng });
         reverseGeocode(lat, lng, true);
         pickupMarker.on('dragend', function(ev) {
           var ll = ev.target.getLatLng();
           pickupCoords = [ll.lat, ll.lng];
+          sendMsg({ type: 'pickup_geocoded', lat: ll.lat, lng: ll.lng });
           reverseGeocode(ll.lat, ll.lng, true);
           if (dropoffCoords) drawRoute();
         });
@@ -235,10 +334,26 @@ function initMap(cfg) {
         dropoffCoords = [lat, lng];
         if (dropoffMarker) map.removeLayer(dropoffMarker);
         dropoffMarker = L.marker(dropoffCoords, { icon: makeIcon('custom-dropoff', '🏁'), draggable: true }).addTo(map);
+        sendMsg({ type: 'dropoff_geocoded', lat: lat, lng: lng });
         reverseGeocode(lat, lng, false);
         dropoffMarker.on('dragend', function(ev) {
           var ll = ev.target.getLatLng();
           dropoffCoords = [ll.lat, ll.lng];
+          sendMsg({ type: 'dropoff_geocoded', lat: ll.lat, lng: ll.lng });
+          reverseGeocode(ll.lat, ll.lng, false);
+          drawRoute();
+        });
+        drawRoute();
+      } else {
+        dropoffCoords = [lat, lng];
+        if (dropoffMarker) map.removeLayer(dropoffMarker);
+        dropoffMarker = L.marker(dropoffCoords, { icon: makeIcon('custom-dropoff', '🏁'), draggable: true }).addTo(map);
+        sendMsg({ type: 'dropoff_geocoded', lat: lat, lng: lng });
+        reverseGeocode(lat, lng, false);
+        dropoffMarker.on('dragend', function(ev) {
+          var ll = ev.target.getLatLng();
+          dropoffCoords = [ll.lat, ll.lng];
+          sendMsg({ type: 'dropoff_geocoded', lat: ll.lat, lng: ll.lng });
           reverseGeocode(ll.lat, ll.lng, false);
           drawRoute();
         });
@@ -248,15 +363,6 @@ function initMap(cfg) {
   }
 
   sendMsg({ type: 'ready' });
-}
-
-function updateDriver(lat, lng) {
-  if (!driverMarker) {
-    var driverEmoji = vehicleType === 'bike' ? '🏍️' : vehicleType === 'rickshaw' ? '🛺' : '🚗';
-    driverMarker = L.marker([lat, lng], { icon: makeIcon('custom-driver', driverEmoji) }).addTo(map);
-  } else {
-    driverMarker.setLatLng([lat, lng]);
-  }
 }
 
 var messageHandler = function(event) {
@@ -278,8 +384,17 @@ var messageHandler = function(event) {
       dropoffMarker = L.marker(dropoffCoords, { icon: makeIcon('custom-dropoff', '🏁'), draggable: true }).addTo(map);
       if (pickupCoords) drawRoute();
     }
-    else if (data.action === 'update_driver') { updateDriver(data.lat, data.lng); }
+    else if (data.action === 'update_driver') {
+      updateDriver(data.lat, data.lng);
+    }
+    else if (data.action === 'trip_started') {
+      tripStarted = true;
+      // Switch to showing pickup→dropoff route
+      if (driverRouteLine) { map.removeLayer(driverRouteLine); driverRouteLine = null; }
+      if (pickupCoords && dropoffCoords) drawRoute();
+    }
     else if (data.action === 'set_user') { setUserLocation(data.lat, data.lng); }
+    else if (data.action === 'set_nearby_drivers') { setNearbyDrivers(data.drivers); }
   } catch(e) {}
 };
 document.addEventListener('message', messageHandler);
@@ -301,6 +416,12 @@ const LeafletMap = forwardRef<LeafletMapRef, LeafletMapProps>(
       driverLng,
       userLat,
       userLng,
+      nearbyDrivers,
+      pickupLat,
+      pickupLng,
+      dropoffLat,
+      dropoffLng,
+      tripStarted = false,
     },
     ref
   ) => {
@@ -332,6 +453,12 @@ const LeafletMap = forwardRef<LeafletMapRef, LeafletMapProps>(
         userLng,
         driverLat,
         driverLng,
+        pickupLat,
+        pickupLng,
+        dropoffLat,
+        dropoffLng,
+        tripStarted,
+        nearbyDrivers: nearbyDrivers ?? [],
       };
       webViewRef.current?.injectJavaScript(`
         (function() {
@@ -342,7 +469,7 @@ const LeafletMap = forwardRef<LeafletMapRef, LeafletMapProps>(
         })();
         true;
       `);
-    }, [pickupAddress, dropoffAddress, mode, vehicleType, driverLat, driverLng, userLat, userLng]);
+    }, [pickupAddress, dropoffAddress, mode, vehicleType, driverLat, driverLng, userLat, userLng, pickupLat, pickupLng, dropoffLat, dropoffLng, tripStarted]);
 
     const handleMessage = useCallback(
       (event: any) => {

@@ -4,3 +4,4 @@ export * from "./rides";
 export * from "./bids";
 export * from "./reviews";
 export * from "./sessions";
+export * from "./messages";
